@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo form · EdgeForms</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/">EdgeForms <small>Demo</small></a>
+      <div class="nav-links"><a href="/signup.html">Create your own</a></div>
+    </nav>
+    <section class="hero" style="padding-bottom:12px;">
+      <p class="pill">Replace YOUR_SLUG after you publish a form</p>
+      <h1>Try the POST shape.</h1>
+      <p class="lede">This page posts to <code>/f/YOUR_SLUG</code>. After signup, paste your real slug below and submit.</p>
+    </section>
+    <form class="card auth-box" style="margin-top:0;" method="POST" id="demo">
+      <label>Form slug<input id="slug" value="YOUR_SLUG" required></label>
+      <label>Name<input name="name" required placeholder="Ada Lovelace"></label>
+      <label>Email<input name="email" type="email" required placeholder="ada@example.com"></label>
+      <label>Message<textarea name="message" required placeholder="Hello from a static page."></textarea></label>
+      <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
+      <p class="err" id="err"></p>
+      <button class="primary" type="submit">POST submission</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById("demo").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const slug = document.getElementById("slug").value.trim();
+      const err = document.getElementById("err");
+      err.textContent = "";
+      const fd = new FormData(e.target);
+      const res = await fetch("/f/" + encodeURIComponent(slug), {
+        method: "POST",
+        headers: { accept: "application/json" },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { err.textContent = data.error || "Submit failed"; return; }
+      location.href = "/thanks.html";
+    });
+  </script>
+</body>
+</html>

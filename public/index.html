@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EdgeForms — form backend on the Cloudflare edge</title>
+  <meta name="description" content="RegisterMySite EdgeForms is a Formspree-style inbox that never leaves Cloudflare. Sign up, generate a form with Workers AI, and POST to your destination email." />
+  <meta name="theme-color" content="#07080a" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/">EdgeForms <small>RegisterMySite</small></a>
+      <div class="nav-links">
+        <a href="/example.html">Demo form</a>
+        <a href="/app.html">Dashboard</a>
+        <a class="btn btn-primary" href="/signup.html">Create account</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <p class="pill">Workers · Email Sending · D1 · R2 · KV · Durable Objects · Queues · Workers AI</p>
+      <h1>Describe the form.<br>Point it at an inbox.</h1>
+      <p class="lede">
+        EdgeForms is RegisterMySite’s Formspree-style backend for static sites.
+        Accounts live in D1. The studio is Cloudflare’s llm-chat-app-template on Workers AI.
+        Submissions land in R2 and leave through the Email Sending binding from
+        <code>forms@registermysite.com</code>.
+      </p>
+      <p class="stack" style="margin-top:22px;">
+        <a class="btn btn-primary" href="/signup.html">Sign up</a>
+        <a class="btn btn-ghost" href="/builder.html">Open the form studio</a>
+        <a class="btn btn-ghost" href="/login.html">Sign in</a>
+      </p>
+    </section>
+
+    <section class="grid cards">
+      <article class="card">
+        <p class="kicker">01</p>
+        <h3>Create an account</h3>
+        <p>Email + password hashed with PBKDF2. Session cookies in KV. No third-party IdP.</p>
+      </article>
+      <article class="card">
+        <p class="kicker">02</p>
+        <h3>Design with chat</h3>
+        <p>Stream Llama 3.1 on Workers AI. The studio emits JSON schema and paste-ready HTML.</p>
+      </article>
+      <article class="card">
+        <p class="kicker">03</p>
+        <h3>Set the destination</h3>
+        <p>You choose the inbox. Verify that address as an Email Sending destination in the Cloudflare dashboard if the binding is restricted.</p>
+      </article>
+      <article class="card">
+        <p class="kicker">04</p>
+        <h3>POST from anywhere</h3>
+        <p><code>/f/:slug</code> accepts HTML forms or JSON. CORS, honeypot, spam score, and a per-form Durable Object limiter.</p>
+      </article>
+    </section>
+
+    <section class="card" style="margin:28px 0;">
+      <h3>Drop-in endpoint</h3>
+      <pre><code><form action="https://forms.registermysite.com/f/your-slug" method="POST">
+  <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
+  <input type="text" name="name" required>
+  <input type="email" name="email" required>
+  <textarea name="message" required></textarea>
+  <button type="submit">Send</button>
+</form></code></pre>
+    </section>
+
+    <section class="grid cards" style="margin-bottom:28px;">
+      <article class="card">
+        <h3>Companion products</h3>
+        <p>
+          Same dark surface as
+          <a href="https://botforge.registermysite.com">BotForge</a>,
+          <a href="https://edgetrack.registermysite.com">EdgeTrack</a>,
+          and html-deploy.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Nothing leaves the edge</h3>
+        <p>No Formspree, no Mailgun key in the Worker. Email is <code>env.EMAIL.send()</code>.</p>
+      </article>
+      <article class="card">
+        <h3>Owner dashboard</h3>
+        <p>Change destination email, lock origins, pause a slug, read the R2 archive, resend mail.</p>
+      </article>
+    </section>
+
+    <p class="footer">A RegisterMySite product. Forms stay on Cloudflare.</p>
+  </div>
+</body>
+</html>

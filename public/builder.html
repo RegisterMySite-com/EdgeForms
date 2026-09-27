@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Form studio · EdgeForms</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/">EdgeForms <small>Studio</small></a>
+      <div class="nav-links">
+        <a href="/app.html">Dashboard</a>
+      </div>
+    </nav>
+    <div class="grid studio" style="grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:18px;align-items:start;">
+      <section class="chat-shell">
+        <div class="messages" id="chat-messages"></div>
+        <form class="composer" id="composer">
+          <textarea id="user-input" rows="1" placeholder="Describe the form. Example: contact form for a roofing company with name, email, phone, job type, message."></textarea>
+          <button class="primary" id="send-button" type="submit">Send</button>
+        </form>
+      </section>
+      <aside class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">Publish</h3>
+        <p style="color:var(--muted);font-size:14px;">When the studio emits JSON, set the inbox this form should POST to. That address must be a verified Email Sending destination on this Worker if you restricted the binding.</p>
+        <label>Form name<input id="form-name" value="Contact" /></label>
+        <label>Destination email<input id="dest" type="email" placeholder="owner@yourdomain.com" required /></label>
+        <p class="err" id="pub-err"></p>
+        <button class="primary" id="publish" type="button">Create form endpoint</button>
+        <pre id="result" hidden></pre>
+      </aside>
+    </div>
+  </div>
+  <script src="/builder.js"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "edgeforms",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "preview_urls": true,
+  "workers_dev": true,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "edgeforms",
+      "database_id": "REPLACE_WITH_D1_ID"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "REPLACE_WITH_KV_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "edgeforms"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FORM_GUARD",
+        "class_name": "FormGuard"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FormGuard"]
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "MAILQ",
+        "queue": "edgeforms-mail"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "edgeforms-mail",
+        "max_batch_size": 8,
+        "max_retries": 5
+      }
+    ]
+  },
+  "vars": {
+    "APP_NAME": "EdgeForms",
+    "BRAND": "RegisterMySite",
+    "FROM_EMAIL": "forms@registermysite.com",
+    "FROM_NAME": "EdgeForms",
+    "PUBLIC_ORIGIN": "https://forms.registermysite.com",
+    "SESSION_TTL_SECONDS": "2592000"
+  }
+}

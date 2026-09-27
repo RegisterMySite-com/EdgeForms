@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign up · EdgeForms</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/">EdgeForms <small>RegisterMySite</small></a>
+      <div class="nav-links"><a href="/login.html">Sign in</a></div>
+    </nav>
+    <form class="auth-box card" id="form">
+      <h1 style="margin-top:0;">Create your account</h1>
+      <p class="lede" style="font-size:14px;">One account. Unlimited forms on the Cloudflare edge.</p>
+      <label>Name<input name="name" autocomplete="name" /></label>
+      <label>Email<input name="email" type="email" required autocomplete="email" /></label>
+      <label>Password<input name="password" type="password" required minlength="10" autocomplete="new-password" /></label>
+      <p class="err" id="err"></p>
+      <button class="primary" type="submit">Create account</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const err = document.getElementById("err");
+      err.textContent = "";
+      const res = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: fd.get("name"),
+          email: fd.get("email"),
+          password: fd.get("password"),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { err.textContent = data.error || "Could not sign up"; return; }
+      location.href = "/app.html";
+    });
+  </script>
+</body>
+</html>

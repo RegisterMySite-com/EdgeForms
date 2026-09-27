@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard · EdgeForms</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="/">EdgeForms <small>RegisterMySite</small></a>
+      <div class="nav-links">
+        <span id="who" class="mono" style="color:var(--muted);font-size:12px;"></span>
+        <a class="btn btn-ghost" href="/builder.html">New form</a>
+        <button class="ghost" id="logout">Log out</button>
+      </div>
+    </nav>
+    <section style="padding:28px 0;">
+      <p class="kicker">Inbox</p>
+      <h1 style="margin:8px 0;letter-spacing:-.03em;">Your forms</h1>
+      <p class="lede" style="font-size:15px;">
+        Each form has a public <code>POST /f/:slug</code> URL. Submissions are stored in R2
+        and emailed with Cloudflare Email Sending. Destination addresses must be allowed
+        on this Worker if you restricted the binding in the dashboard.
+      </p>
+      <div id="list" class="grid cards" style="margin-top:22px;"></div>
+    </section>
+    <div id="detail"></div>
+  </div>
+  <script>
+    const list = document.getElementById("list");
+    const detail = document.getElementById("detail");
+
+    function escapeHtml(v) {
+      return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({
+        "&": "&",
+        "<": "<",
+        ">": ">",
+        '"': """,
+        "'": "&#39;",
+      }[c]));
+    }
+
+    async function boot() {
+      const me = await fetch("/api/me");
+      if (me.status === 401) { location.href = "/login.html"; return; }
+      const user = await me.json();
+      document.getElementById("who").textContent = user.email;
+      await refresh();
+    }
+
+    async function refresh() {
+      const res = await fetch("/api/forms");
+      const data = await res.json();
+      list.innerHTML = "";
+      (data.forms || []).forEach((form) => {
+        const card = document.createElement("article");
+        card.className = "card";
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+            <div>
+              <h3>${escapeHtml(form.name)}</h3>
+              <p class="mono">${escapeHtml(form.destination_email)}</p>
+              <p style="margin-top:8px;"><span class="pill">${escapeHtml(form.status)}</span> · ${form.submission_count || 0} submissions</p>
+            </div>
+            <button class="ghost" data-id="${escapeHtml(form.id)}">Open</button>
+          </div>`;
+        card.querySelector("button").onclick = () => openForm(form.id);
+        list.appendChild(card);
+      });
+      if (!(data.forms || []).length) {
+        list.innerHTML = `<article class="card"><h3>No forms yet</h3><p>Open the studio and describe the form you need.</p><p style="margin-top:12px;"><a class="btn btn-primary" href="/builder.html">Create a form</a></p></article>`;
+      }
+    }
+
+    async function openForm(id) {
+      const [formRes, subRes] = await Promise.all([
+        fetch("/api/forms/" + id),
+        fetch("/api/forms/" + id + "/submissions"),
+      ]);
+      const form = await formRes.json();
+      const subs = await subRes.json();
+      const origins = (() => { try { return (JSON.parse(form.allowed_origins || "[]") || []).join(", "); } catch { return ""; } })();
+      detail.innerHTML = `
+        <section class="card" style="margin-bottom:28px;">
+          <h2 style="margin-top:0;">${escapeHtml(form.name)}</h2>
+          <label>Endpoint<input readonly value="${escapeHtml(form.endpoint)}"></label>
+          <label>Destination email<input id="dest" value="${escapeHtml(form.destination_email)}"></label>
+          <label>Allowed origins (comma separated)<input id="origins" value="${escapeHtml(origins)}" placeholder="https://registermysite.com"></label>
+          <label>Redirect after submit<input id="redir" value="${escapeHtml(form.redirect_url || "")}"></label>
+          <label>Reply-to field<input id="reply" value="${escapeHtml(form.reply_to_field || "email")}"></label>
+          <label>Embed HTML<textarea id="embed" style="min-height:180px;">${escapeHtml(form.embedHtml || form.embed_html || "")}</textarea></label>
+          <p class="err" id="saveErr"></p>
+          <div class="stack">
+            <button class="primary" id="save">Save destination</button>
+            <button class="ghost" id="pause">${form.status === "paused" ? "Activate" : "Pause"}</button>
+            <button class="btn-danger" id="del">Delete</button>
+          </div>
+          <h3 style="margin-top:28px;">Recent submissions</h3>
+          <div style="overflow:auto;">
+            <table class="table">
+              <thead><tr><th>When</th><th>Mail</th><th>Preview</th><th></th></tr></thead>
+              <tbody>${(subs.submissions || []).map((s) => `
+                <tr>
+                  <td class="mono">${escapeHtml(new Date(s.received_at).toLocaleString())}</td>
+                  <td>${escapeHtml(s.email_status)}${s.email_error ? " · " + escapeHtml(s.email_error) : ""}</td>
+                  <td class="mono">${escapeHtml(s.payload_preview || "")}</td>
+                  <td><button class="ghost resend" data-sid="${escapeHtml(s.id)}">Resend</button></td>
+                </tr>`).join("") || "<tr><td colspan=4>None yet</td></tr>"}
+              </tbody>
+            </table>
+          </div>
+        </section>`;
+
+      document.getElementById("save").onclick = async () => {
+        const originList = document.getElementById("origins").value.split(",").map((s) => s.trim()).filter(Boolean);
+        const res = await fetch("/api/forms/" + id, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            destinationEmail: document.getElementById("dest").value,
+            allowedOrigins: originList,
+            redirectUrl: document.getElementById("redir").value || null,
+            replyToField: document.getElementById("reply").value,
+            embedHtml: document.getElementById("embed").value,
+          }),
+        });
+        const data = await res.json();
+        document.getElementById("saveErr").textContent = res.ok ? "Saved." : (data.error || "Save failed");
+        if (res.ok) refresh();
+      };
+      document.getElementById("pause").onclick = async () => {
+        await fetch("/api/forms/" + id, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: form.status === "paused" ? "active" : "paused" }),
+        });
+        openForm(id); refresh();
+      };
+      document.getElementById("del").onclick = async () => {
+        if (!confirm("Delete this form and its submission index?")) return;
+        await fetch("/api/forms/" + id, { method: "DELETE" });
+        detail.innerHTML = "";
+        refresh();
+      };
+      detail.querySelectorAll(".resend").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await fetch("/api/forms/" + id + "/submissions/" + btn.dataset.sid + "/resend", { method: "POST" });
+          openForm(id);
+        });
+      });
+    }
+
+    document.getElementById("logout").onclick = async () => {
+      await fetch("/api/logout", { method: "POST" });
+      location.href = "/";
+    };
+
+    boot();
+  </script>
+</body>
+</html>
