@@ -198,5 +198,8 @@
       }
     });
   </script>
+  <script>
+    fetch("/api/me").then((r) => { if (r.ok) location.replace("/app"); }).catch(() => {});
+  </script>
 </body>
 </html>

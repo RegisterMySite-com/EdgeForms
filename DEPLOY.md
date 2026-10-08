@@ -34,7 +34,7 @@ Pin a single inbox only if this install is private:
 
 ## Shared RegisterMySite login
 
-Password login stays. A valid `rms_account` cookie from account.registermysite.com is a second way in. Set the same secrets as the account Worker, then migrate:
+A valid `rms_account` cookie on `/`, `/login`, or `/signup` creates or links the local user and redirects to `/app`. Those paths are in `run_worker_first` so the asset handler cannot skip the Worker. Public `/f/:slug` submits stay unauthenticated.
 
 ```bash
 npx wrangler secret put SESSION_JWT_SECRET

@@ -12,7 +12,7 @@
       <a class="brand" href="/">EdgeForms <small>RegisterMySite</small></a>
       <div class="nav-links"><a href="/signup.html">Create account</a></div>
     </nav>
-    <form class="auth-box card" id="form">
+    <form class="auth-box card" id="form" hidden>
       <h1 style="margin-top:0;">Welcome back</h1>
       <a class="btn btn-primary" id="rms" href="https://account.registermysite.com/login">Continue with RegisterMySite</a>
       <p class="hint">Or sign in with your EdgeForms password.</p>
@@ -26,6 +26,10 @@
   <script>
     const next = new URLSearchParams(location.search).get("next") || (location.origin + "/app");
     document.getElementById("rms").href = "https://account.registermysite.com/login?next=" + encodeURIComponent(next);
+    fetch("/api/me").then((r) => {
+      if (r.ok) { location.replace("/app"); return; }
+      document.getElementById("form").hidden = false;
+    }).catch(() => { document.getElementById("form").hidden = false; });
     fetch("/api/account-link-status").then((r) => r.json()).then((data) => {
       if (data.linkRequired) document.getElementById("link-note").textContent = data.message || "Sign in to your EdgeForms account once to link it";
     }).catch(() => {});

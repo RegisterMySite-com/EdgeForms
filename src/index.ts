@@ -1,4 +1,4 @@
-import { handleLogin, handleLogout, handleSignup, requireUser } from "./auth";
+import { handleLogin, handleLogout, handleSignup, redirectIfSharedSession, requireUser } from "./auth";
 import { APP_VERSION, accountLinkStatus, accountSummary } from "./account";
 import { handleChat } from "./chat";
 import { parseFormSchema, renderEmbed, sanitizeTheme } from "./embed";
@@ -42,6 +42,7 @@ export default {
           brand: env.BRAND,
           version: APP_VERSION,
           emailFrom: env.FROM_EMAIL,
+          accountAuth: Boolean(env.SESSION_JWT_SECRET),
           bindings,
           database,
         });
@@ -85,6 +86,11 @@ export default {
       const publicJs = path.match(/^\/f\/([^/]+)\.js$/);
       if ((publicForm || publicJs) && (request.method === "POST" || request.method === "OPTIONS" || request.method === "GET")) {
         return handleSubmit(request, env, (publicForm || publicJs)![1]);
+      }
+
+      if (request.method === "GET" && isAccountEntry(path)) {
+        const signedIn = await redirectIfSharedSession(request, env);
+        if (signedIn) return signedIn;
       }
 
       if (isStaticAssetPath(path)) {
@@ -338,6 +344,10 @@ async function exportCsv(request: Request, env: Env, id: string): Promise<Respon
 
 async function ownedForm(env: Env, user: UserRow, id: string): Promise<FormRow | null> {
   return env.DB.prepare("SELECT * FROM forms WHERE user_id = ? AND (id = ? OR slug = ?)").bind(user.id, id, id).first<FormRow>();
+}
+
+function isAccountEntry(path: string): boolean {
+  return path === "/" || path === "/index.html" || path === "/login" || path === "/login.html" || path === "/signup" || path === "/signup.html";
 }
 
 function publicOrigin(env: Env, request: Request): string {

@@ -3,7 +3,7 @@ import { isEmail, json, kvGet, kvPut, randomId, readCookie, timingSafeEqual } fr
 
 export const ACCOUNT_COOKIE = "rms_account";
 export const ACCOUNT_ISS = "https://account.registermysite.com";
-export const APP_VERSION = "1.1.0";
+export const APP_VERSION = "1.2.0";
 const SKEW_MS = 60_000;
 
 export interface AccountClaims {
@@ -138,12 +138,10 @@ export async function userFromAccountCookie(request: Request, env: Env): Promise
 
     const sameEmail = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(claims.email).first<UserRow>();
     if (sameEmail) {
-      if (claims.email_verified && sameEmail.verified_at) {
-        if (!sameEmail.account_user_id) {
-          await env.DB.prepare("UPDATE users SET account_user_id = ? WHERE id = ? AND account_user_id IS NULL")
-            .bind(claims.sub, sameEmail.id)
-            .run();
-        }
+      if (claims.email_verified && (!sameEmail.account_user_id || sameEmail.account_user_id === claims.sub)) {
+        await env.DB.prepare("UPDATE users SET account_user_id = ?, verified_at = COALESCE(verified_at, ?) WHERE id = ?")
+          .bind(claims.sub, Date.now(), sameEmail.id)
+          .run();
         return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(sameEmail.id).first<UserRow>();
       }
       return null;

@@ -40,6 +40,19 @@ async function localUser(request: Request, env: Env): Promise<UserRow | null> {
   return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first<UserRow>();
 }
 
+export async function redirectIfSharedSession(request: Request, env: Env): Promise<Response | null> {
+  const user = await currentUser(request, env);
+  if (!user) return null;
+  const headers = new Headers({
+    location: "/app",
+    "cache-control": "no-store",
+  });
+  if (!readCookie(request, SESSION)) {
+    headers.set("set-cookie", await mintSession(env, user.id, request));
+  }
+  return new Response(null, { status: 302, headers });
+}
+
 export async function requireUser(request: Request, env: Env): Promise<UserRow | Response> {
   const user = await currentUser(request, env);
   if (!user) return json({ error: "Sign in required" }, 401);
@@ -108,6 +121,10 @@ export async function handleLogout(request: Request, env: Env): Promise<Response
 }
 
 async function issueSession(env: Env, userId: string, request: Request): Promise<Response> {
+  return json({ ok: true }, 200, { "set-cookie": await mintSession(env, userId, request) });
+}
+
+async function mintSession(env: Env, userId: string, request: Request): Promise<string> {
   const sid = randomId(32);
   const ttl = Number(env.SESSION_TTL_SECONDS || 2592000);
   const now = Date.now();
@@ -117,5 +134,5 @@ async function issueSession(env: Env, userId: string, request: Request): Promise
     .bind(sid, userId, now, now + ttl * 1000, request.headers.get("user-agent")?.slice(0, 240) || null)
     .run();
   await kvPut(env, `session:${sid}`, userId, ttl);
-  return json({ ok: true }, 200, { "set-cookie": cookie(SESSION, sid, ttl) });
+  return cookie(SESSION, sid, ttl);
 }
