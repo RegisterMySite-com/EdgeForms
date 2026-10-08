@@ -137,6 +137,11 @@ textarea { min-height: 110px; resize: vertical; }
   font-size: 12px;
   text-decoration: none;
 }
+.build-status { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; color: var(--muted); font-size: 14px; }
+.build-track { flex: 1; height: 8px; border-radius: 999px; background: var(--elevated); overflow: hidden; }
+.build-bar { height: 100%; width: 0; background: var(--teal); transition: width .2s ease; }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--teal); border-radius: 50%; animation: ef-spin .7s linear infinite; }
+@keyframes ef-spin { to { transform: rotate(360deg); } }
 .auth-box .btn-primary { display: block; text-align: center; margin: 8px 0 4px; }
 .footer { color: var(--muted); font-size: 13px; padding: 40px 0 24px; }
 .chat-shell { height: calc(100vh - 72px); display: grid; grid-template-rows: 1fr auto; min-width: 0; }

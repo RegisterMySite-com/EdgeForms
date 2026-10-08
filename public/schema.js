@@ -74,6 +74,7 @@
         required: Boolean(f.required),
       };
       if (f.placeholder) field.placeholder = String(f.placeholder).slice(0, 80);
+      if (f.help) field.help = String(f.help).slice(0, 240);
       if (Array.isArray(f.options)) field.options = f.options.map((o) => String(o).slice(0, 80)).slice(0, 30);
       if (f.min != null && String(f.min) !== "") field.min = String(f.min).slice(0, 20);
       if (f.max != null && String(f.max) !== "") field.max = String(f.max).slice(0, 20);
@@ -90,11 +91,68 @@
     };
   }
 
+  function repairTruncatedObject(text) {
+    const start = text.indexOf("{");
+    if (start < 0 || !/"fields"\s*:/.test(text)) return null;
+    let slice = text.slice(start);
+    let inString = false;
+    let escape = false;
+    const stack = [];
+    for (let i = 0; i < slice.length; i++) {
+      const ch = slice[i];
+      if (inString) {
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') { inString = true; continue; }
+      if (ch === "{" || ch === "[") stack.push(ch);
+      else if (ch === "}" || ch === "]") stack.pop();
+    }
+    if (inString) slice += '"';
+    slice = slice.replace(/,\s*$/, "");
+    while (stack.length) {
+      const open = stack.pop();
+      slice += open === "{" ? "}" : "]";
+    }
+    return slice;
+  }
+
+  function extractFieldsObjects(text) {
+    const found = [];
+    for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
+      const obj = extractBalancedObject(text.slice(start));
+      if (obj && /"fields"\s*:/.test(obj)) found.push(obj);
+    }
+    found.sort((a, b) => b.length - a.length);
+    return found;
+  }
+
+  function recoverSchema(text) {
+    const candidates = [];
+    const fence = String(text || "").match(/```json\s*([\s\S]*?)```/i);
+    if (fence) candidates.push(fence[1]);
+    candidates.push(...extractFieldsObjects(text));
+    const repaired = repairTruncatedObject(text);
+    if (repaired) candidates.push(repaired);
+    let lastError = "The model did not return a fields array.";
+    for (const raw of candidates) {
+      try {
+        const checked = validateSchema(JSON.parse(raw));
+        if (checked.ok) return checked;
+        lastError = checked.error;
+      } catch { /* keep looking */ }
+    }
+    const truncated = text.includes("{") && extractBalancedObject(text) == null;
+    return { ok: false, error: lastError, truncated };
+  }
+
   function parseStreamedText(chunks) {
     const text = Array.isArray(chunks) ? chunks.join("") : String(chunks || "");
     const stripped = stripAfterJson(text);
     return validateSchema(extractSchema(stripped));
   }
 
-  root.EFSchema = { extractBalancedObject, stripAfterJson, extractSchema, validateSchema, parseStreamedText };
+  root.EFSchema = { extractBalancedObject, stripAfterJson, extractSchema, validateSchema, parseStreamedText, recoverSchema, repairTruncatedObject };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -37,6 +37,11 @@
       <section class="studio-preview" id="preview">
         <p class="kicker">Preview</p>
         <p class="hint">Preview only. Nothing is sent.</p>
+        <div class="build-status" id="build-status" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Building your form…</span>
+          <div class="build-track" aria-hidden="true"><div class="build-bar" id="build-bar"></div></div>
+        </div>
         <div class="preview-frame" id="preview-frame">
           <div class="empty-preview" id="empty-preview">Describe a form in the chat to start.</div>
         </div>
@@ -80,6 +85,7 @@
             </select>
           </label>
           <label>Placeholder<input id="f-placeholder" /></label>
+          <label>Help text<input id="f-help" maxlength="240" placeholder="Shown under the input" /></label>
           <label class="check-row"><input id="f-required" type="checkbox"> Required</label>
           <label>Options (one per line)<textarea id="f-options" rows="4"></textarea></label>
           <div class="stack">

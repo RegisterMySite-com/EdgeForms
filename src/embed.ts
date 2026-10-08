@@ -82,6 +82,7 @@ export function renderEmbed(
 .ef-form .ef-title{margin:0 0 6px;font-size:24px;letter-spacing:-.03em;color:${theme.text}}
 .ef-form .ef-note{margin:0 0 22px;color:${theme.muted};font-size:14px;line-height:1.45}
 .ef-form .ef-field{display:flex;flex-direction:column;gap:6px;margin:0 0 14px;font-size:13px;font-weight:600;color:${theme.text}}
+.ef-form .ef-help{margin:0;font-weight:400;color:${theme.muted};font-size:12px;line-height:1.4}
 .ef-form .ef-field.ef-check{flex-direction:row;align-items:center;gap:10px;font-weight:500}
 .ef-form input,.ef-form textarea,.ef-form select{width:100%;border:1px solid rgba(17,19,24,.12);background:${theme.fieldBackground};color:${theme.text};border-radius:12px;padding:12px 13px;font:inherit;font-weight:400}
 .ef-form textarea{min-height:110px;resize:vertical}
@@ -108,24 +109,30 @@ function renderField(field: FieldSchema): string {
   const label = attr(String(field.label || field.name).slice(0, 80));
   const req = field.required ? " required" : "";
   const ph = field.placeholder ? ` placeholder="${attr(field.placeholder)}"` : "";
-  const type = ["text", "email", "tel", "url", "number", "date", "textarea", "select", "checkbox"].includes(field.type)
+  const type = ["text", "email", "tel", "url", "number", "date", "textarea", "select", "checkbox", "radio"].includes(field.type)
     ? field.type
     : "text";
+  const help = field.help ? `<p class="ef-help">${attr(String(field.help).slice(0, 240))}</p>` : "";
 
   if (type === "textarea") {
-    return `  <label class="ef-field">${label}<textarea name="${name}"${req}${ph}></textarea></label>`;
+    return `  <label class="ef-field">${label}<textarea name="${name}"${req}${ph}></textarea>${help}</label>`;
   }
-  if (type === "select") {
+  if (type === "select" || type === "radio") {
+    const opts = (field.options || []).map((o) => type === "radio"
+      ? `<label class="ef-field ef-check"><input type="radio" name="${name}" value="${attr(o)}"${req}> ${attr(o)}</label>`
+      : `<option value="${attr(o)}">${attr(o)}</option>`).join("");
+    if (type === "radio") {
+      return `  <fieldset class="ef-field"><legend>${label}</legend>${opts}${help}</fieldset>`;
+    }
     const first = field.required
       ? `<option value="" disabled selected>Choose one\u2026</option>`
       : `<option value="" selected>Choose one\u2026</option>`;
-    const opts = (field.options || []).map((o) => `<option value="${attr(o)}">${attr(o)}</option>`).join("");
-    return `  <label class="ef-field">${label}<select name="${name}"${req}>${first}${opts}</select></label>`;
+    return `  <label class="ef-field">${label}<select name="${name}"${req}>${first}${opts}</select>${help}</label>`;
   }
   if (type === "checkbox") {
-    return `  <label class="ef-field ef-check"><input type="checkbox" name="${name}" value="yes"${req}> ${label}</label>`;
+    return `  <label class="ef-field ef-check"><input type="checkbox" name="${name}" value="yes"${req}> ${label}</label>${help}`;
   }
-  return `  <label class="ef-field">${label}<input type="${type}" name="${name}"${req}${ph}></label>`;
+  return `  <label class="ef-field">${label}<input type="${type}" name="${name}"${req}${ph}>${help}</label>`;
 }
 
 /** Back-compat name used by the router. */
@@ -177,7 +184,7 @@ export function validateModelSchema(input: unknown): { ok: true; name: string; f
   if (!input || typeof input !== "object") return { ok: false, error: "Model output was not an object" };
   const raw = input as { name?: unknown; fields?: unknown; theme?: unknown };
   if (!Array.isArray(raw.fields) || !raw.fields.length) return { ok: false, error: "JSON must include a fields array" };
-  const allowed = new Set(["text", "email", "tel", "url", "number", "date", "textarea", "select", "checkbox", "hidden"]);
+  const allowed = new Set(["text", "email", "tel", "url", "number", "date", "textarea", "select", "checkbox", "radio", "hidden"]);
   const fields: FieldSchema[] = [];
   for (const item of raw.fields.slice(0, 40)) {
     if (!item || typeof item !== "object") continue;
@@ -191,6 +198,7 @@ export function validateModelSchema(input: unknown): { ok: true; name: string; f
       type,
       required: Boolean(f.required),
       placeholder: f.placeholder ? String(f.placeholder).slice(0, 80) : undefined,
+      help: f.help ? String(f.help).slice(0, 240) : undefined,
       options: Array.isArray(f.options) ? f.options.map((o) => String(o).slice(0, 80)).slice(0, 30) : undefined,
     });
   }

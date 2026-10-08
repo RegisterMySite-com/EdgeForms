@@ -20,7 +20,8 @@ Rules:
     {"name":"message","label":"Message","type":"textarea","required":true}
   ]
 }
-- Field types: text, email, tel, url, number, date, textarea, select, checkbox.
+- Field types: text, email, tel, url, number, date, textarea, select, checkbox, radio.
+- Each field may include "help": a short hint, at most 240 characters, shown under the input.
 - Font ids: system, inter, dm-sans, source-sans, nunito, ibm-plex, space-grotesk, libre-franklin, lora, merriweather, playfair.
 - Use date for DOB, number for age/height/weight, textarea for address.`;
 
@@ -37,7 +38,7 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     MODEL_ID,
     {
       messages: safe,
-      max_tokens: 900,
+      max_tokens: 2500,
       stream: true,
     },
   );

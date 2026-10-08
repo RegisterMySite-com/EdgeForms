@@ -178,6 +178,7 @@ function fillFieldEditor() {
   document.getElementById("f-name").value = field.name || "";
   document.getElementById("f-type").value = field.type || "text";
   document.getElementById("f-placeholder").value = field.placeholder || "";
+  document.getElementById("f-help").value = field.help || "";
   document.getElementById("f-required").checked = Boolean(field.required);
   document.getElementById("f-options").value = (field.options || []).join("\n");
   document.getElementById("f-min").value = field.min || "";
@@ -192,6 +193,7 @@ function readFieldEditor() {
   field.name = document.getElementById("f-name").value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 80) || field.name;
   field.type = document.getElementById("f-type").value;
   field.placeholder = document.getElementById("f-placeholder").value.slice(0, 80) || undefined;
+  field.help = document.getElementById("f-help").value.slice(0, 240) || undefined;
   field.required = document.getElementById("f-required").checked;
   const opts = document.getElementById("f-options").value.split("\n").map((s) => s.trim()).filter(Boolean);
   field.options = opts.length ? opts : undefined;
@@ -237,7 +239,7 @@ function afterEdit() {
     schedulePreview();
   });
 });
-["f-label", "f-name", "f-type", "f-placeholder", "f-required", "f-options", "f-min", "f-max", "f-step"].forEach((id) => {
+["f-label", "f-name", "f-type", "f-placeholder", "f-help", "f-required", "f-options", "f-min", "f-max", "f-step"].forEach((id) => {
   document.getElementById(id).addEventListener("input", () => {
     readFieldEditor();
     afterEdit();
@@ -303,8 +305,9 @@ async function sendMessage(event) {
     if (!ok) return;
   }
   lastUserMessage = message;
-  isProcessing = true;
+  setBusy(true);
   chatErr.textContent = "";
+  retryBtn.hidden = true;
   chatHistory.push({ role: "user", content: message });
   chatHistory.push({ role: "assistant", content: "" });
   userInput.value = "";
@@ -321,53 +324,33 @@ async function sendMessage(event) {
   }
 
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: wire }),
-    });
-    if (response.status === 401) {
-      location.href = "https://account.registermysite.com/login?next=" + encodeURIComponent(location.href);
-      return;
+    const first = await streamChat(wire);
+    if (first.unauthorized) return;
+    let checked = recover(first.raw);
+    let shown = first.raw;
+    if (!checked.ok) {
+      setProgress(90);
+      const second = await streamChat(wire.concat([{
+        role: "user",
+        content: "Reply with one JSON object only: {name, fields, theme}. No prose.",
+      }]));
+      if (second.unauthorized) return;
+      const again = recover(second.raw);
+      shown = second.raw || first.raw;
+      if (again.ok) checked = again;
     }
-    if (!response.ok || !response.body) throw new Error("Chat request failed");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     const last = chatHistory[chatHistory.length - 1];
-    let raw = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const parsed = consumeSseEvents(done ? buffer + "\n\n" : buffer);
-      buffer = parsed.rest;
-      for (const data of parsed.events) {
-        if (data === "[DONE]") continue;
-        try {
-          const jsonData = JSON.parse(data);
-          raw += typeof jsonData.response === "string"
-            ? jsonData.response
-            : (jsonData.choices?.[0]?.delta?.content || "");
-        } catch { /* ignore */ }
-      }
-      if (done) break;
-    }
-    if (typeof EFSchema === "undefined") {
-      last.content = "The form builder failed to load (schema.js). Reload the page.";
-      chatErr.textContent = "The form builder failed to load (schema.js). Reload the page.";
-      renderChat();
-      return;
-    }
-    const stripped = EFSchema.stripAfterJson(raw);
-    const checked = EFSchema.validateSchema(EFSchema.extractSchema(stripped));
     if (!checked.ok) {
       last.content = "Could not apply that change. The current form is unchanged.";
-      chatErr.textContent = checked.error;
+      chatErr.textContent = checked.error || "The model did not return a fields array.";
       retryBtn.hidden = false;
-      rawJson.textContent = stripped;
+      rawJson.textContent = String(shown || first.raw || "").slice(0, 500);
+      document.getElementById("json-details").open = true;
+      clearProgress();
       renderChat();
       return;
     }
+    setProgress(100);
     applySchema(checked.schema);
     last.content = "Updated: " + schema.fields.length + " fields";
     retryBtn.hidden = true;
@@ -380,10 +363,73 @@ async function sendMessage(event) {
       : "The studio could not reach Workers AI.";
     chatErr.textContent = msg;
     chatHistory.push({ role: "assistant", content: msg });
+    clearProgress();
     renderChat();
   } finally {
-    isProcessing = false;
+    setBusy(false);
   }
+}
+
+function setBusy(on) {
+  isProcessing = on;
+  const send = document.getElementById("send-button");
+  if (send) send.disabled = on;
+  if (userInput) userInput.disabled = on;
+  const status = document.getElementById("build-status");
+  if (status) status.hidden = !on;
+  if (on) setProgress(4);
+}
+
+function setProgress(pct) {
+  const bar = document.getElementById("build-bar");
+  if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+}
+
+function clearProgress() {
+  const status = document.getElementById("build-status");
+  if (status) status.hidden = true;
+  setProgress(0);
+}
+
+function recover(raw) {
+  if (typeof EFSchema === "undefined") return { ok: false, error: "The form builder failed to load (schema.js). Reload the page." };
+  if (typeof EFSchema.recoverSchema === "function") return EFSchema.recoverSchema(raw);
+  return EFSchema.validateSchema(EFSchema.extractSchema(EFSchema.stripAfterJson(raw)));
+}
+
+async function streamChat(messages) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+  if (response.status === 401) {
+    location.href = "https://account.registermysite.com/login?next=" + encodeURIComponent(location.href);
+    return { unauthorized: true, raw: "" };
+  }
+  if (!response.ok || !response.body) throw new Error("Chat request failed");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let raw = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const parsed = consumeSseEvents(done ? buffer + "\n\n" : buffer);
+    buffer = parsed.rest;
+    for (const data of parsed.events) {
+      if (data === "[DONE]") continue;
+      try {
+        const jsonData = JSON.parse(data);
+        raw += typeof jsonData.response === "string"
+          ? jsonData.response
+          : (jsonData.choices?.[0]?.delta?.content || "");
+      } catch { /* ignore */ }
+    }
+    setProgress(Math.min(90, Math.round((raw.length / 8192) * 90)));
+    if (done) break;
+  }
+  return { raw };
 }
 
 retryBtn.addEventListener("click", () => {

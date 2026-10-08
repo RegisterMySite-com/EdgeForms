@@ -70,6 +70,7 @@ export interface FieldSchema {
   type: string;
   required?: boolean;
   placeholder?: string;
+  help?: string;
   options?: string[];
 }
 
