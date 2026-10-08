@@ -5,7 +5,7 @@ export interface Env {
     send(message: EmailPayload): Promise<{ messageId: string }>;
   };
   DB: D1Database;
-  KV: KVNamespace;
+  KVEDGEFORM: KVNamespace;
   BUCKET: R2Bucket;
   FORM_GUARD: DurableObjectNamespace;
   MAILQ: Queue<MailJob>;
@@ -67,6 +67,24 @@ export interface FieldSchema {
   required?: boolean;
   placeholder?: string;
   options?: string[];
+}
+
+export interface FormTheme {
+  font: string;
+  background: string;
+  text: string;
+  muted: string;
+  accent: string;
+  fieldBackground: string;
+  buttonText: string;
+  buttonColor: string;
+  buttonTextColor: string;
+}
+
+export interface FormSchema {
+  name?: string;
+  fields: FieldSchema[];
+  theme?: FormTheme;
 }
 
 export interface ChatMessage {

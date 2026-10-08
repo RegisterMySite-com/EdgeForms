@@ -1,19 +1,38 @@
 import type { Env, FormRow } from "./types";
 import { sendSubmissionEmail } from "./email";
+import { parseFormSchema, renderEmbed } from "./embed";
 import { guardForm } from "./guard";
-import { clientIp, json, randomId, sha256Hex } from "./util";
+import { wantsHtml, isTestRequest, limitFields, safeRedirect, wantsJson } from "./http";
+import { DEMO_SLUG, ensureDemoForm, purgeDemoSubmissions } from "./demo";
+import { clientIp, json, kvGet, kvPut, randomId, sha256Hex } from "./util";
 
 const HIDDEN = new Set(["_gotcha", "_next", "_redirect", "honeypot"]);
 
 export async function handleSubmit(request: Request, env: Env, slug: string): Promise<Response> {
+  slug = slug.replace(/\/$/, "").replace(/\.js$/i, "");
   if (request.method === "OPTIONS") {
     const form = await loadForm(env, slug);
     return cors(request, new Response(null, { status: 204 }), form || undefined);
   }
 
-  const form = await loadForm(env, slug);
-  if (!form || form.status !== "active") {
-    return cors(request, json({ error: "Unknown or paused form" }, 404));
+  if (request.method === "GET") {
+    return handlePublicGet(request, env, slug);
+  }
+
+  if (request.method !== "POST") {
+    return cors(request, json({ error: "Method not allowed" }, 405));
+  }
+
+  let form = await loadForm(env, slug);
+  if (!form && slug === DEMO_SLUG) {
+    await ensureDemoForm(env);
+    form = await loadForm(env, slug);
+  }
+  if (!form) {
+    return fail(request, 404, "form_not_found", `No form exists with slug '${slug}'.`);
+  }
+  if (form.status !== "active") {
+    return fail(request, 423, "form_paused", "This form is paused by its owner.");
   }
 
   const origin = request.headers.get("origin") || request.headers.get("referer") || "";
@@ -30,17 +49,20 @@ export async function handleSubmit(request: Request, env: Env, slug: string): Pr
   const payload = await readPayload(request);
   const honeypot = form.honeypot_field || "_gotcha";
   if ((payload[honeypot] || "").trim()) {
-    return finish(request, form, { ok: true, id: "ignored" });
+    return finish(request, env, form, { ok: true, id: "ignored" });
   }
 
-  const clean: Record<string, string> = {};
-  for (const [k, v] of Object.entries(payload)) {
-    if (HIDDEN.has(k) || k === honeypot) continue;
-    const value = String(v).slice(0, 8000).trim();
-    if (value) clean[k.slice(0, 80)] = value;
-  }
+  const clean = limitFields(payload);
+  delete clean._gotcha;
+  delete clean._next;
+  delete clean._redirect;
+  delete clean.honeypot;
   if (!Object.keys(clean).length) {
-    return cors(request, json({ error: "Form was empty" }, 400), form);
+    return cors(request, json({ ok: false, errors: { form: "Form was empty" } }, 400), form);
+  }
+
+  if (isTestRequest(request)) {
+    return finish(request, env, form, { ok: true, id: "preview", test: true }, payload._next || payload._redirect);
   }
 
   const spam = scoreSpam(clean);
@@ -80,7 +102,7 @@ export async function handleSubmit(request: Request, env: Env, slug: string): Pr
     )
     .run();
 
-  if (form.notify_email) {
+  if (form.notify_email && form.slug !== DEMO_SLUG) {
     try {
       await env.MAILQ.send({ submissionId: id, formId: form.id });
     } catch {
@@ -91,7 +113,32 @@ export async function handleSubmit(request: Request, env: Env, slug: string): Pr
     }
   }
 
-  return finish(request, form, { ok: true, id }, payload._next || payload._redirect);
+  if (form.slug === DEMO_SLUG) {
+    try { await purgeDemoSubmissions(env, form.id); } catch { /* ignore */ }
+  }
+
+  return finish(request, env, form, { ok: true, id }, payload._next || payload._redirect);
+}
+
+async function handlePublicGet(request: Request, env: Env, slug: string): Promise<Response> {
+  const url = new URL(request.url);
+  const form = await loadForm(env, slug);
+  if (!form) {
+    return fail(request, 404, "form_not_found", `No form exists with slug '${slug}'.`);
+  }
+  if (form.status !== "active") {
+    return fail(request, 423, "form_paused", "This form is paused by its owner.");
+  }
+  const parsed = parseFormSchema(form.schema_json);
+  const endpoint = `${url.origin}/f/${form.slug}`;
+  const embed = renderEmbed(form.name, parsed.fields, parsed.theme, endpoint, { scripted: url.searchParams.get("embed") === "1" });
+  if (url.pathname.endsWith(".js")) {
+    const src = `${endpoint}?embed=1`;
+    const js = `(()=>{var d=document.currentScript;var f=document.createElement("iframe");f.src=${JSON.stringify(src)};f.title=${JSON.stringify(form.name)};f.style.cssText="border:0;width:100%;min-height:640px;background:transparent";(d&&d.parentNode?d.parentNode:document.body).insertBefore(f,d||null);})();`;
+    return new Response(js, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=60" } });
+  }
+  const page = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${form.name} · EdgeForms</title></head><body style="margin:0;background:#f3f4f6;padding:32px 16px">${embed}</body></html>`;
+  return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }
 
 export async function deliverQueuedMail(env: Env, submissionId: string): Promise<void> {
@@ -124,10 +171,16 @@ export async function deliverQueuedMail(env: Env, submissionId: string): Promise
 }
 
 async function loadForm(env: Env, slug: string): Promise<FormRow | null> {
-  const cached = await env.KV.get(`form:${slug}`, "json");
-  if (cached) return cached as FormRow;
+  const cached = await kvGet(env, `form:${slug}`);
+  if (cached) {
+    try {
+      return JSON.parse(cached) as FormRow;
+    } catch {
+      /* fall through */
+    }
+  }
   const row = await env.DB.prepare("SELECT * FROM forms WHERE slug = ?").bind(slug).first<FormRow>();
-  if (row) await env.KV.put(`form:${slug}`, JSON.stringify(row), { expirationTtl: 60 });
+  if (row) await kvPut(env, `form:${slug}`, JSON.stringify(row), 60);
   return row;
 }
 
@@ -191,22 +244,31 @@ function scoreSpam(payload: Record<string, string>): number {
   return Math.min(score, 1);
 }
 
+function fail(request: Request, status: number, code: string, message: string): Response {
+  const body = { error: code, message };
+  if (wantsHtml(request)) {
+    const safe = message.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${status} · EdgeForms</title>
+<style>body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;background:#07080a;color:#e8eaed;min-height:100vh;display:grid;place-items:center;padding:24px}main{max-width:440px;background:#111318;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px 24px}h1{margin:0 0 8px;font-size:22px}p{color:#c4c8ce;line-height:1.5}a{color:#5eead4}</style>
+</head><body><main><h1>${status === 423 ? "Form paused" : "Form not found"}</h1><p>${safe}</p><p><a href="javascript:history.back()">Go back</a> · <a href="/">Home</a></p></main></body></html>`;
+    return cors(request, new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8" } }));
+  }
+  return cors(request, json(body, status));
+}
+
 function finish(
   request: Request,
+  env: Env,
   form: FormRow,
   body: Record<string, unknown>,
   override?: string,
 ): Response {
-  const accept = request.headers.get("accept") || "";
-  const next = override || form.redirect_url;
-  if (next && !accept.includes("application/json")) {
-    return cors(request, Response.redirect(next, 303), form);
+  if (wantsJson(request)) {
+    return cors(request, json(body), form);
   }
-  if (!accept.includes("application/json") && request.method === "POST") {
-    const origin = new URL(request.url).origin;
-    return cors(request, Response.redirect(`${origin}/thanks.html`, 303), form);
-  }
-  return cors(request, json(body), form);
+  const fallback = `${new URL(request.url).origin}/thanks`;
+  const next = safeRedirect(override || form.redirect_url, fallback);
+  return cors(request, Response.redirect(next, 303), form);
 }
 
 function cors(request: Request, response: Response, form?: FormRow): Response {

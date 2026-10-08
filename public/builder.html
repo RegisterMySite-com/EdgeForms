@@ -7,32 +7,108 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap studio-wrap">
     <nav class="nav">
       <a class="brand" href="/">EdgeForms <small>Studio</small></a>
       <div class="nav-links">
-        <a href="/app.html">Dashboard</a>
+        <a href="#preview" class="jump-preview">Preview</a>
+        <a href="/app">All forms</a>
       </div>
     </nav>
-    <div class="grid studio" style="grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:18px;align-items:start;">
-      <section class="chat-shell">
+
+    <div class="studio-3">
+      <section class="studio-chat card">
+        <p class="kicker">Chat</p>
         <div class="messages" id="chat-messages"></div>
         <form class="composer" id="composer">
-          <textarea id="user-input" rows="1" placeholder="Describe the form. Example: contact form for a roofing company with name, email, phone, job type, message."></textarea>
+          <textarea id="user-input" rows="2" placeholder="Describe the form, or say what to change."></textarea>
           <button class="primary" id="send-button" type="submit">Send</button>
         </form>
+        <p class="err" id="chat-err" role="alert"></p>
+        <button class="ghost" id="retry" type="button" hidden>Retry</button>
+        <details id="json-details">
+          <summary>Advanced: view JSON</summary>
+          <pre id="raw-json"></pre>
+        </details>
       </section>
-      <aside class="card" style="margin-top:20px;">
-        <h3 style="margin-top:0;">Publish</h3>
-        <p style="color:var(--muted);font-size:14px;">When the studio emits JSON, set the inbox this form should POST to. That address must be a verified Email Sending destination on this Worker if you restricted the binding.</p>
-        <label>Form name<input id="form-name" value="Contact" /></label>
-        <label>Destination email<input id="dest" type="email" placeholder="owner@yourdomain.com" required /></label>
-        <p class="err" id="pub-err"></p>
-        <button class="primary" id="publish" type="button">Create form endpoint</button>
-        <pre id="result" hidden></pre>
+
+      <section class="studio-preview" id="preview">
+        <p class="kicker">Preview</p>
+        <p class="hint">Preview only. Nothing is sent.</p>
+        <div class="preview-frame" id="preview-frame">
+          <div class="empty-preview" id="empty-preview">Describe a form in the chat to start.</div>
+        </div>
+        <p class="ok" id="preview-note" hidden></p>
+      </section>
+
+      <aside class="studio-edit card">
+        <p class="kicker">Edit form</p>
+        <label>Form name<input id="form-name" /></label>
+        <label>Notification email<input id="dest" type="email" placeholder="owner@yourdomain.com" /></label>
+        <label>Button label<input id="cta" /></label>
+        <label>Success message<input id="success-msg" placeholder="Message sent." /></label>
+        <div class="stack" style="margin-top:10px;">
+          <button class="primary" id="save" type="button">Save</button>
+          <button class="ghost" id="copy-embed" type="button">Copy embed</button>
+        </div>
+        <p class="err" id="pub-err" role="alert"></p>
+        <p class="ok" id="pub-ok"></p>
+        <p class="mono" id="form-meta"></p>
+
+        <h3>Fields</h3>
+        <div id="field-list"></div>
+        <button class="ghost" id="add-field" type="button">Add field</button>
+
+        <div id="field-editor" hidden>
+          <h3>Selected field</h3>
+          <label>Label<input id="f-label" /></label>
+          <label>Name / slug<input id="f-name" /></label>
+          <label>Type
+            <select id="f-type">
+              <option value="text">text</option>
+              <option value="email">email</option>
+              <option value="tel">tel</option>
+              <option value="url">url</option>
+              <option value="number">number</option>
+              <option value="date">date</option>
+              <option value="textarea">textarea</option>
+              <option value="select">select</option>
+              <option value="checkbox">checkbox group</option>
+              <option value="radio">radio</option>
+            </select>
+          </label>
+          <label>Placeholder<input id="f-placeholder" /></label>
+          <label class="check-row"><input id="f-required" type="checkbox"> Required</label>
+          <label>Options (one per line)<textarea id="f-options" rows="4"></textarea></label>
+          <div class="stack">
+            <label>Min<input id="f-min" /></label>
+            <label>Max<input id="f-max" /></label>
+            <label>Step<input id="f-step" /></label>
+          </div>
+        </div>
+
+        <h3>Theme</h3>
+        <label>Font
+          <select id="font">
+            <option value="dm-sans">DM Sans</option>
+            <option value="inter">Inter</option>
+            <option value="system">System UI</option>
+            <option value="source-sans">Source Sans 3</option>
+            <option value="nunito">Nunito</option>
+            <option value="ibm-plex">IBM Plex Sans</option>
+            <option value="space-grotesk">Space Grotesk</option>
+            <option value="libre-franklin">Libre Franklin</option>
+            <option value="lora">Lora</option>
+            <option value="merriweather">Merriweather</option>
+            <option value="playfair">Playfair Display</option>
+          </select>
+        </label>
+        <label>Accent<input id="accent" type="color" value="#0f766e"></label>
+        <label>Background<input id="bg" type="color" value="#ffffff"></label>
       </aside>
     </div>
   </div>
+  <script src="/schema.js"></script>
   <script src="/builder.js"></script>
 </body>
 </html>

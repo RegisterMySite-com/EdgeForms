@@ -30,7 +30,7 @@ export async function hashPassword(password: string, salt: string): Promise<stri
     {
       name: "PBKDF2",
       salt: new TextEncoder().encode(salt),
-      iterations: 120_000,
+      iterations: 80_000,
       hash: "SHA-256",
     },
     key,
@@ -94,11 +94,44 @@ export function clientIp(request: Request): string {
   );
 }
 
+export async function kvGet(env: { KVEDGEFORM?: KVNamespace }, key: string, type?: "text" | "json"): Promise<string | null> {
+  try {
+    if (!env.KVEDGEFORM) return null;
+    if (type === "json") {
+      const value = await env.KVEDGEFORM.get(key);
+      return value;
+    }
+    return await env.KVEDGEFORM.get(key);
+  } catch (err) {
+    console.error("kv get failed", key, err);
+    return null;
+  }
+}
+
+export async function kvPut(env: { KVEDGEFORM?: KVNamespace }, key: string, value: string, expirationTtl?: number): Promise<void> {
+  try {
+    if (!env.KVEDGEFORM) return;
+    await env.KVEDGEFORM.put(key, value, expirationTtl ? { expirationTtl } : undefined);
+  } catch (err) {
+    console.error("kv put failed", key, err);
+  }
+}
+
+export async function kvDelete(env: { KVEDGEFORM?: KVNamespace }, key: string): Promise<void> {
+  try {
+    if (!env.KVEDGEFORM) return;
+    await env.KVEDGEFORM.delete(key);
+  } catch (err) {
+    console.error("kv delete failed", key, err);
+  }
+}
+
 export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, """)
-    .replace(/'/g, "&#39;");
+  return value.replace(/[&<>"']/g, (ch) => {
+    if (ch === "&") return "\u0026amp;";
+    if (ch === "<") return "\u0026lt;";
+    if (ch === ">") return "\u0026gt;";
+    if (ch === '"') return "\u0026quot;";
+    return "\u0026#39;";
+  });
 }

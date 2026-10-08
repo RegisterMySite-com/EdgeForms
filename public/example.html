@@ -3,46 +3,182 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Demo form · EdgeForms</title>
+  <title>Try a form · EdgeForms</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="wrap">
     <nav class="nav">
       <a class="brand" href="/">EdgeForms <small>Demo</small></a>
-      <div class="nav-links"><a href="/signup.html">Create your own</a></div>
+      <div class="nav-links">
+        <a href="/app">Dashboard</a>
+        <a class="btn btn-primary" href="/signup">Create your own</a>
+      </div>
     </nav>
+
     <section class="hero" style="padding-bottom:12px;">
-      <p class="pill">Replace YOUR_SLUG after you publish a form</p>
-      <h1>Try the POST shape.</h1>
-      <p class="lede">This page posts to <code>/f/YOUR_SLUG</code>. After signup, paste your real slug below and submit.</p>
+      <p class="pill">Live POST to /f/:slug</p>
+      <h1>Try the endpoint.</h1>
+      <p class="lede">Paste a slug from the dashboard, pick one of your forms, or use the public demo form.</p>
     </section>
-    <form class="card auth-box" style="margin-top:0;" method="POST" id="demo">
-      <label>Form slug<input id="slug" value="YOUR_SLUG" required></label>
+
+    <div id="demo-banner" class="banner" hidden>
+      You're testing the demo form. Sign in to test your own.
+      <a href="/signup">Create a free form</a>
+    </div>
+
+    <form class="card example-card" method="POST" id="demo" novalidate>
+      <label id="picker-wrap" hidden>
+        Choose one of your forms
+        <select id="picker"><option value="">Select a form</option></select>
+      </label>
+      <label>
+        Form slug
+        <input id="slug" name="slug" value="" required placeholder="e.g. stivqxcvtv" autocomplete="off" spellcheck="false">
+      </label>
+      <p class="hint">Find your slug in the dashboard next to your form (the part after /f/).</p>
+      <p class="endpoint-live mono" id="hit">POST https://forms.registermysite.com/f/</p>
       <label>Name<input name="name" required placeholder="Ada Lovelace"></label>
       <label>Email<input name="email" type="email" required placeholder="ada@example.com"></label>
       <label>Message<textarea name="message" required placeholder="Hello from a static page."></textarea></label>
-      <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
-      <p class="err" id="err"></p>
-      <button class="primary" type="submit">POST submission</button>
+      <div class="ef-gotcha-page" aria-hidden="true">
+        <input type="text" name="_gotcha" tabindex="-1" autocomplete="off">
+      </div>
+      <button class="primary" type="submit" id="send">POST submission</button>
+      <p class="err" id="err" role="alert" aria-live="polite"></p>
+      <div class="success-card" id="ok" hidden></div>
     </form>
   </div>
   <script>
+    const BLOCKED = new Set(["", "your_slug", "your-slug", "myslug", "example"]);
+    const slugInput = document.getElementById("slug");
+    const err = document.getElementById("err");
+    const ok = document.getElementById("ok");
+    const send = document.getElementById("send");
+    const hit = document.getElementById("hit");
+    const banner = document.getElementById("demo-banner");
+    const pickerWrap = document.getElementById("picker-wrap");
+    const picker = document.getElementById("picker");
+    const origin = location.origin;
+
+    function blocked(value) {
+      return BLOCKED.has(value.trim().toLowerCase());
+    }
+
+    function showHit() {
+      const slug = slugInput.value.trim();
+      hit.textContent = "POST " + origin + "/f/" + (slug || "<slug>");
+    }
+
+    function setSlug(value, { persist } = { persist: true }) {
+      slugInput.value = value;
+      showHit();
+      if (persist && value && !blocked(value)) localStorage.setItem("edgeforms:lastSlug", value);
+    }
+
+    slugInput.addEventListener("input", showHit);
+
+    picker.addEventListener("change", () => {
+      if (picker.value) setSlug(picker.value);
+    });
+
+    async function boot() {
+      const params = new URLSearchParams(location.search);
+      const fromUrl = (params.get("slug") || "").trim();
+      if (fromUrl && !blocked(fromUrl)) setSlug(fromUrl);
+
+      let signedIn = false;
+      try {
+        const me = await fetch("/api/me", { credentials: "same-origin" });
+        signedIn = me.ok;
+        if (signedIn) {
+          const formsRes = await fetch("/api/forms", { credentials: "same-origin" });
+          const data = await formsRes.json();
+          const forms = data.forms || [];
+          if (forms.length) {
+            pickerWrap.hidden = false;
+            forms.forEach((form) => {
+              const opt = document.createElement("option");
+              opt.value = form.slug;
+              opt.textContent = form.status === "paused"
+                ? form.name + " · " + form.slug + " (paused)"
+                : form.name + " · " + form.slug;
+              opt.disabled = form.status === "paused";
+              picker.appendChild(opt);
+            });
+          }
+        }
+      } catch {
+        signedIn = false;
+      }
+
+      if (!slugInput.value) {
+        const last = localStorage.getItem("edgeforms:lastSlug") || "";
+        if (last && !blocked(last)) setSlug(last, { persist: false });
+      }
+
+      if (!slugInput.value && signedIn && picker.options.length > 1) {
+        const firstActive = [...picker.options].find((o) => o.value && !o.disabled);
+        if (firstActive) {
+          picker.value = firstActive.value;
+          setSlug(firstActive.value);
+        }
+      }
+
+      if (!slugInput.value && !signedIn) {
+        try {
+          const demo = await fetch("/api/demo").then((r) => r.json());
+          if (demo.slug) {
+            setSlug(demo.slug, { persist: false });
+            banner.hidden = false;
+          }
+        } catch {
+          banner.hidden = false;
+          banner.textContent = "Could not load the public demo form. Sign in to test your own.";
+        }
+      }
+      showHit();
+    }
+
     document.getElementById("demo").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const slug = document.getElementById("slug").value.trim();
-      const err = document.getElementById("err");
       err.textContent = "";
-      const fd = new FormData(e.target);
-      const res = await fetch("/f/" + encodeURIComponent(slug), {
-        method: "POST",
-        headers: { accept: "application/json" },
-        body: fd,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { err.textContent = data.error || "Submit failed"; return; }
-      location.href = "/thanks.html";
+      ok.hidden = true;
+      const slug = slugInput.value.trim();
+      if (blocked(slug)) {
+        err.textContent = "Paste your form's slug from the dashboard first.";
+        return;
+      }
+      send.disabled = true;
+      send.textContent = "Sending…";
+      try {
+        const fd = new FormData(e.target);
+        fd.delete("slug");
+        const res = await fetch("/f/" + encodeURIComponent(slug), {
+          method: "POST",
+          headers: { accept: "application/json" },
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          err.textContent = data.message || data.error || "Submit failed";
+          return;
+        }
+        setSlug(slug);
+        ok.hidden = false;
+        ok.innerHTML = "<strong>Message sent.</strong> Submission " +
+          (data.id ? "<code>" + data.id + "</code>" : "saved") +
+          ". <a href=\"/app/forms/" + encodeURIComponent(slug) + "\">View in dashboard</a>";
+      } catch {
+        err.textContent = "Network error, please try again";
+      } finally {
+        send.disabled = false;
+        send.textContent = "POST submission";
+      }
     });
+
+    boot();
   </script>
 </body>
 </html>
+

@@ -13,9 +13,9 @@
     <nav class="nav">
       <a class="brand" href="/">EdgeForms <small>RegisterMySite</small></a>
       <div class="nav-links">
-        <a href="/example.html">Demo form</a>
-        <a href="/app.html">Dashboard</a>
-        <a class="btn btn-primary" href="/signup.html">Create account</a>
+        <a href="/example">Demo form</a>
+        <a href="/app">Dashboard</a>
+        <a class="btn btn-primary" href="/signup">Create account</a>
       </div>
     </nav>
 
@@ -29,9 +29,9 @@
         <code>forms@registermysite.com</code>.
       </p>
       <p class="stack" style="margin-top:22px;">
-        <a class="btn btn-primary" href="/signup.html">Sign up</a>
-        <a class="btn btn-ghost" href="/builder.html">Open the form studio</a>
-        <a class="btn btn-ghost" href="/login.html">Sign in</a>
+        <a class="btn btn-primary" href="/signup">Sign up</a>
+        <a class="btn btn-ghost" href="/builder">Open the form studio</a>
+        <a class="btn btn-ghost" href="/login">Sign in</a>
       </p>
     </section>
 
@@ -58,15 +58,60 @@
       </article>
     </section>
 
-    <section class="card" style="margin:28px 0;">
-      <h3>Drop-in endpoint</h3>
-      <pre><code><form action="https://forms.registermysite.com/f/your-slug" method="POST">
-  <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
-  <input type="text" name="name" required>
-  <input type="email" name="email" required>
-  <textarea name="message" required></textarea>
-  <button type="submit">Send</button>
-</form></code></pre>
+    <section class="how card" id="how">
+      <p class="kicker">Drop-in endpoint</p>
+      <h2>Point any HTML form at your EdgeForms URL. No JavaScript, no backend.</h2>
+      <div class="how-grid">
+        <ol class="how-steps">
+          <li>
+            <span class="step-num">1</span>
+            <div>
+              <h3>Create a form</h3>
+              <p>Sign up and publish a form in the dashboard.</p>
+              <a class="btn btn-primary" href="/signup">Create a free form</a>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <div>
+              <h3>Copy your endpoint</h3>
+              <p class="endpoint-pattern">https://forms.registermysite.com/f/<span class="chip" id="slug-chip">your-slug</span></p>
+              <p>Your slug is shown in the dashboard next to each form.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <div>
+              <h3>Paste it into your site</h3>
+              <p>Drop the snippet into any page. Fields keep their names.</p>
+            </div>
+          </li>
+        </ol>
+        <div>
+          <div class="code-wrap">
+            <button type="button" class="ghost copy-btn" id="copy-snippet">Copy</button>
+            <pre><code id="snippet"></code></pre>
+          </div>
+          <ul class="how-notes">
+            <li>Any field name works — every field is saved and emailed.</li>
+            <li><code>_gotcha</code> is a hidden spam trap; leave it empty.</li>
+            <li>Add a hidden <code>_next</code> field to send visitors to your own thank-you page.</li>
+            <li>Works with <code>fetch()</code> too — send <code>Accept: application/json</code> to get JSON back.</li>
+          </ul>
+        </div>
+      </div>
+      <aside class="live-demo" aria-labelledby="live-title">
+        <h3 id="live-title">Try it live</h3>
+        <p>This uses the public demo form. It is not emailed to a personal inbox.</p>
+        <form id="landing-demo">
+          <label>Name<input name="name" required placeholder="Ada Lovelace"></label>
+          <label>Email<input name="email" type="email" required placeholder="ada@example.com"></label>
+          <label>Message<textarea name="message" required placeholder="Hello from the landing page."></textarea></label>
+          <button class="primary" type="submit">Send test message</button>
+          <p class="err" id="live-err" role="alert" aria-live="polite"></p>
+          <div class="success-card" id="live-ok" hidden>This is what your inbox would receive.</div>
+        </form>
+      </aside>
     </section>
 
     <section class="grid cards" style="margin-bottom:28px;">
@@ -91,5 +136,67 @@
 
     <p class="footer">A RegisterMySite product. Forms stay on Cloudflare.</p>
   </div>
+  <script>
+    const snippet = document.getElementById("snippet");
+    const chip = document.getElementById("slug-chip");
+    function applySlug(slug) {
+      const raw = `<form action="https://forms.registermysite.com/f/${slug}" method="POST">
+  <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
+  <label>Name <input type="text" name="name" required></label>
+  <label>Email <input type="email" name="email" required></label>
+  <label>Message <textarea name="message" required></textarea></label>
+  <button type="submit">Send</button>
+</form>`;
+      snippet.textContent = raw;
+      chip.textContent = slug;
+    }
+    applySlug("YOUR-SLUG");
+    fetch("/api/me").then((r) => r.ok ? fetch("/api/forms") : null).then((r) => r && r.json()).then((data) => {
+      const first = data && data.forms && data.forms.find((f) => f.status === "active");
+      if (first) applySlug(first.slug);
+    }).catch(() => {});
+    document.getElementById("copy-snippet").addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      const text = snippet.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "Copied!";
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(snippet);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = "Press Ctrl/Cmd+C";
+      }
+      setTimeout(() => { btn.textContent = "Copy"; }, 1600);
+    });
+    document.getElementById("landing-demo").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("live-err");
+      const ok = document.getElementById("live-ok");
+      const btn = e.target.querySelector("button");
+      err.textContent = "";
+      ok.hidden = true;
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      try {
+        const demo = await fetch("/api/demo").then((r) => r.json());
+        const res = await fetch("/f/" + encodeURIComponent(demo.slug), {
+          method: "POST",
+          headers: { accept: "application/json" },
+          body: new FormData(e.target),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { err.textContent = data.message || data.error || "Could not send"; return; }
+        ok.hidden = false;
+      } catch {
+        err.textContent = "Network error, please try again";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Send test message";
+      }
+    });
+  </script>
 </body>
 </html>

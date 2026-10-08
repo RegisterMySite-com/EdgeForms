@@ -1,0 +1,100 @@
+/**
+ * Shared schema helpers for EdgeForms Studio.
+ * Loaded by builder.js and by tests/builder-stream.test.mjs.
+ */
+(function (root) {
+  function extractBalancedObject(text) {
+    const start = text.indexOf("{");
+    if (start < 0) return null;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) return text.slice(start, i + 1);
+      }
+    }
+    return null;
+  }
+
+  function stripAfterJson(text) {
+    const fence = text.match(/```json\s*([\s\S]*?)```/i);
+    if (fence) {
+      const start = text.search(/```json/i);
+      return text.slice(0, start) + "```json\n" + fence[1].trim() + "\n```";
+    }
+    const obj = extractBalancedObject(text);
+    if (obj && /"fields"\s*:/.test(obj)) {
+      const start = text.indexOf("{");
+      return text.slice(0, start) + "```json\n" + obj + "\n```";
+    }
+    return text;
+  }
+
+  function extractSchema(text) {
+    const fence = text.match(/```json\s*([\s\S]*?)```/i);
+    const raw = fence ? fence[1] : extractBalancedObject(text);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  const ALLOWED = new Set(["text", "email", "tel", "url", "number", "date", "textarea", "select", "checkbox", "radio", "file", "hidden"]);
+
+  function validateSchema(parsed) {
+    if (!parsed || !Array.isArray(parsed.fields) || !parsed.fields.length) {
+      return { ok: false, error: "The model did not return a fields array." };
+    }
+    const fields = [];
+    for (const f of parsed.fields.slice(0, 40)) {
+      const name = String(f.name || "").replace(/[^a-zA-Z0-9_]/g, "").slice(0, 80);
+      if (!name) continue;
+      let type = ALLOWED.has(f.type) ? f.type : "text";
+      if (type === "file") type = "url";
+      const field = {
+        name,
+        label: String(f.label || name).slice(0, 80),
+        type,
+        required: Boolean(f.required),
+      };
+      if (f.placeholder) field.placeholder = String(f.placeholder).slice(0, 80);
+      if (Array.isArray(f.options)) field.options = f.options.map((o) => String(o).slice(0, 80)).slice(0, 30);
+      if (f.min != null && String(f.min) !== "") field.min = String(f.min).slice(0, 20);
+      if (f.max != null && String(f.max) !== "") field.max = String(f.max).slice(0, 20);
+      if (f.step != null && String(f.step) !== "") field.step = String(f.step).slice(0, 20);
+      if (f.default != null) field.default = String(f.default).slice(0, 80);
+      fields.push(field);
+    }
+    if (!fields.length) return { ok: false, error: "No valid fields in the model JSON." };
+    const theme = parsed.theme && typeof parsed.theme === "object" ? { ...parsed.theme } : {};
+    if (!theme.buttonText) theme.buttonText = "Submit";
+    return {
+      ok: true,
+      schema: { name: String(parsed.name || "Contact").slice(0, 80), fields, theme },
+    };
+  }
+
+  function parseStreamedText(chunks) {
+    const text = Array.isArray(chunks) ? chunks.join("") : String(chunks || "");
+    const stripped = stripAfterJson(text);
+    return validateSchema(extractSchema(stripped));
+  }
+
+  root.EFSchema = { extractBalancedObject, stripAfterJson, extractSchema, validateSchema, parseStreamedText };
+})(typeof globalThis !== "undefined" ? globalThis : this);

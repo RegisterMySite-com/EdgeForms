@@ -37,7 +37,9 @@
           password: fd.get("password"),
         }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw || `Signup failed (${res.status})` }; }
       if (!res.ok) { err.textContent = data.error || "Could not sign up"; return; }
       location.href = "/app.html";
     });

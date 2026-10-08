@@ -1,9 +1,11 @@
 import { handleLogin, handleLogout, handleSignup, requireUser } from "./auth";
-import { handleChat, defaultEmbed } from "./chat";
+import { handleChat } from "./chat";
+import { parseFormSchema, renderEmbed, sanitizeTheme } from "./embed";
 import { FormGuard } from "./guard";
 import { deliverQueuedMail, handleSubmit } from "./submit";
-import type { Env, FieldSchema, FormRow, UserRow } from "./types";
-import { formSlug, isEmail, json, randomId } from "./util";
+import type { Env, FieldSchema, FormRow, FormTheme, UserRow } from "./types";
+import { DEMO_SLUG, ensureDemoForm } from "./demo";
+import { formSlug, isEmail, json, kvDelete, kvGet, kvPut, randomId } from "./util";
 
 export { FormGuard };
 
@@ -18,14 +20,35 @@ export default {
 
     try {
       if (path === "/api/health") {
+        const bindings = {
+          db: Boolean(env.DB),
+          kv: Boolean(env.KVEDGEFORM),
+          r2: Boolean(env.BUCKET),
+          ai: Boolean(env.AI),
+          email: Boolean(env.EMAIL),
+          queue: Boolean(env.MAILQ),
+        };
+        let database: string = "skipped";
+        try {
+          await env.DB.prepare("SELECT id FROM users LIMIT 1").first();
+          database = "ok";
+        } catch (err) {
+          database = String(err);
+        }
         return json({
           ok: true,
           product: "EdgeForms",
           brand: env.BRAND,
           emailFrom: env.FROM_EMAIL,
+          bindings,
+          database,
         });
       }
 
+      if (path === "/api/demo") {
+        const demo = await ensureDemoForm(env);
+        return json({ slug: demo.slug, endpoint: `${publicOrigin(env, request)}/f/${demo.slug}` });
+      }
       if (path === "/api/signup" && request.method === "POST") return handleSignup(request, env);
       if (path === "/api/login" && request.method === "POST") return handleLogin(request, env);
       if (path === "/api/logout" && request.method === "POST") return handleLogout(request, env);
@@ -36,6 +59,8 @@ export default {
         return handleChat(request, env);
       }
 
+      if (path === "/api/embed-preview" && request.method === "POST") return previewEmbed(request, env);
+
       if (path === "/api/forms" && request.method === "GET") return listForms(request, env);
       if (path === "/api/forms" && request.method === "POST") return createForm(request, env);
       const formMatch = path.match(/^\/api\/forms\/([^/]+)$/);
@@ -43,6 +68,8 @@ export default {
       if (formMatch && request.method === "PATCH") return updateForm(request, env, formMatch[1]);
       if (formMatch && request.method === "DELETE") return deleteForm(request, env, formMatch[1]);
       const subMatch = path.match(/^\/api\/forms\/([^/]+)\/submissions$/);
+      const csvMatch = path.match(/^\/api\/forms\/([^/]+)\/submissions\.csv$/);
+      if (csvMatch && request.method === "GET") return exportCsv(request, env, csvMatch[1]);
       if (subMatch && request.method === "GET") return listSubmissions(request, env, subMatch[1], url);
       const oneSub = path.match(/^\/api\/forms\/([^/]+)\/submissions\/([^/]+)$/);
       if (oneSub && request.method === "GET") return getSubmission(request, env, oneSub[1], oneSub[2]);
@@ -50,15 +77,29 @@ export default {
       if (resend && request.method === "POST") return resendSubmission(request, env, resend[1], resend[2]);
 
       const publicForm = path.match(/^\/f\/([^/]+)\/?$/);
-      if (publicForm && (request.method === "POST" || request.method === "OPTIONS")) {
-        return handleSubmit(request, env, publicForm[1]);
+      const publicJs = path.match(/^\/f\/([^/]+)\.js$/);
+      if ((publicForm || publicJs) && (request.method === "POST" || request.method === "OPTIONS" || request.method === "GET")) {
+        return handleSubmit(request, env, (publicForm || publicJs)![1]);
+      }
+
+      if (isStaticAssetPath(path)) {
+        return withSecurity(await serveStaticAsset(request, env, path));
+      }
+
+      if (path === "/builder" || /^\/app\/forms\/[^/]+\/edit\/?$/.test(path)) {
+        const asset = await env.ASSETS.fetch(new URL("/builder.html", request.url));
+        return withSecurity(asset);
+      }
+      if (path === "/app" || path.startsWith("/app/")) {
+        const asset = await env.ASSETS.fetch(new URL("/app.html", request.url));
+        return withSecurity(asset);
       }
 
       return withSecurity(await env.ASSETS.fetch(request));
     } catch (err) {
       console.error("edgeforms error", err);
-      ctx.waitUntil(Promise.resolve());
-      return json({ error: "Unexpected error" }, 500);
+      const detail = err instanceof Error ? err.message : String(err);
+      return json({ error: "Unexpected error", detail }, 500);
     }
   },
 
@@ -86,6 +127,18 @@ async function me(request: Request, env: Env): Promise<Response> {
   });
 }
 
+async function previewEmbed(request: Request, env: Env): Promise<Response> {
+  const user = await requireUser(request, env);
+  if (user instanceof Response) return user;
+  const body = (await request.json()) as { name?: string; fields?: FieldSchema[]; theme?: Partial<FormTheme>; endpoint?: string };
+  if (!Array.isArray(body.fields) || !body.fields.length) {
+    return json({ embedHtml: "", empty: true });
+  }
+  const name = String(body.name || "Form").slice(0, 80);
+  const html = renderEmbed(name, body.fields, body.theme, body.endpoint || "#preview");
+  return json({ embedHtml: html });
+}
+
 async function listForms(request: Request, env: Env): Promise<Response> {
   const user = await requireUser(request, env);
   if (user instanceof Response) return user;
@@ -106,20 +159,32 @@ async function createForm(request: Request, env: Env): Promise<Response> {
     name?: string;
     destinationEmail?: string;
     fields?: FieldSchema[];
-    embedHtml?: string;
+    theme?: Partial<FormTheme>;
     allowedOrigins?: string[];
     redirectUrl?: string;
+    requestId?: string;
+    useDefault?: boolean;
   };
   const name = (body.name || "Contact").trim().slice(0, 80);
   const destinationEmail = (body.destinationEmail || "").trim().toLowerCase();
   if (!isEmail(destinationEmail)) return json({ error: "Add the email this form should POST to" }, 400);
+  const explicitDefault = body.useDefault === true;
+  if (!explicitDefault && (!Array.isArray(body.fields) || !body.fields.length)) {
+    return json({ error: "fields_required", message: "Send a fields array or {\"useDefault\":true}." }, 400);
+  }
 
+  const requestId = typeof body.requestId === "string" ? body.requestId.trim().slice(0, 64) : "";
+  if (requestId) {
+    const cached = await kvGet(env, `create:${user.id}:${requestId}`);
+    if (cached) return new Response(cached, { status: 200, headers: { "content-type": "application/json; charset=utf-8" } });
+  }
   const id = randomId(18);
   const slug = formSlug();
   const now = Date.now();
   const fields = Array.isArray(body.fields) && body.fields.length ? body.fields : defaultFields();
-  const schema_json = JSON.stringify({ name, fields });
-  const embed_html = body.embedHtml || defaultEmbed(name, fields);
+  const theme = sanitizeTheme(body.theme);
+  const schema_json = JSON.stringify({ name, fields, theme });
+  const embed_html = renderEmbed(name, fields, theme);
   const origins = body.allowedOrigins?.length ? JSON.stringify(body.allowedOrigins) : null;
 
   await env.DB.prepare(
@@ -132,14 +197,18 @@ async function createForm(request: Request, env: Env): Promise<Response> {
     .run();
 
   const endpoint = `${publicOrigin(env, request)}/f/${slug}`;
-  return json({
+  const created = {
     id,
     slug,
     endpoint,
     name,
     destinationEmail,
     embedHtml: embed_html.replaceAll("{{ENDPOINT}}", endpoint),
-  }, 201);
+    scriptEmbed: `<script src="${endpoint}.js" async></script>`,
+    fields: fields.map((f) => f.name),
+  };
+  if (requestId) await kvPut(env, `create:${user.id}:${requestId}`, JSON.stringify(created), 86400);
+  return json(created, 201);
 }
 
 async function getForm(request: Request, env: Env, id: string): Promise<Response> {
@@ -148,10 +217,14 @@ async function getForm(request: Request, env: Env, id: string): Promise<Response
   const form = await ownedForm(env, user, id);
   if (!form) return json({ error: "Form not found" }, 404);
   const endpoint = `${publicOrigin(env, request)}/f/${form.slug}`;
+  const parsed = parseFormSchema(form.schema_json);
   return json({
     ...form,
     endpoint,
-    embedHtml: (form.embed_html || "").replaceAll("{{ENDPOINT}}", endpoint),
+    fields: parsed.fields,
+    theme: parsed.theme,
+    embedHtml: renderEmbed(form.name, parsed.fields.length ? parsed.fields : defaultFields(), parsed.theme, endpoint),
+    scriptEmbed: `<script src="${endpoint}.js" async></script>`,
   });
 }
 
@@ -171,10 +244,13 @@ async function updateForm(request: Request, env: Env, id: string): Promise<Respo
   const notify = typeof body.notifyEmail === "boolean" ? (body.notifyEmail ? 1 : 0) : form.notify_email;
   const store = typeof body.storeSubmissions === "boolean" ? (body.storeSubmissions ? 1 : 0) : form.store_submissions;
   const replyTo = typeof body.replyToField === "string" && body.replyToField.trim() ? body.replyToField.trim().slice(0, 40) : form.reply_to_field;
-  const embed = typeof body.embedHtml === "string" ? body.embedHtml : form.embed_html;
-  const schema = Array.isArray(body.fields)
-    ? JSON.stringify({ name, fields: body.fields })
-    : form.schema_json;
+  const parsed = parseFormSchema(form.schema_json);
+  const fields = Array.isArray(body.fields) ? (body.fields as FieldSchema[]) : parsed.fields;
+  const theme = body.theme && typeof body.theme === "object"
+    ? sanitizeTheme(body.theme as Partial<FormTheme>)
+    : parsed.theme;
+  const schema = JSON.stringify({ name, fields, theme });
+  const embed = renderEmbed(name, fields.length ? fields : defaultFields(), theme);
 
   await env.DB.prepare(
     `UPDATE forms SET name = ?, destination_email = ?, status = ?, redirect_url = ?,
@@ -183,8 +259,9 @@ async function updateForm(request: Request, env: Env, id: string): Promise<Respo
   )
     .bind(name, destination, status, redirect, origins, notify, store, replyTo, embed, schema, Date.now(), form.id)
     .run();
-  await env.KV.delete(`form:${form.slug}`);
-  return json({ ok: true });
+  await kvDelete(env, `form:${form.slug}`);
+  const endpoint = `${publicOrigin(env, request)}/f/${form.slug}`;
+  return json({ ok: true, embedHtml: renderEmbed(name, fields.length ? fields : defaultFields(), theme, endpoint) });
 }
 
 async function deleteForm(request: Request, env: Env, id: string): Promise<Response> {
@@ -194,7 +271,7 @@ async function deleteForm(request: Request, env: Env, id: string): Promise<Respo
   if (!form) return json({ error: "Form not found" }, 404);
   await env.DB.prepare("DELETE FROM submissions WHERE form_id = ?").bind(form.id).run();
   await env.DB.prepare("DELETE FROM forms WHERE id = ?").bind(form.id).run();
-  await env.KV.delete(`form:${form.slug}`);
+  await kvDelete(env, `form:${form.slug}`);
   return json({ ok: true });
 }
 
@@ -209,11 +286,50 @@ async function listSubmissions(request: Request, env: Env, id: string, url: URL)
   )
     .bind(form.id, limit)
     .all();
-  return json({ submissions: results || [] });
+  const submissions = (results || []).map((row) => {
+    const item = row as { payload_preview?: string };
+    let payload: Record<string, string> = {};
+    try { payload = item.payload_preview ? JSON.parse(item.payload_preview) as Record<string, string> : {}; } catch { payload = {}; }
+    return { ...row, payload };
+  });
+  return json({ submissions });
+}
+
+async function exportCsv(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await requireUser(request, env);
+  if (user instanceof Response) return user;
+  const form = await ownedForm(env, user, id);
+  if (!form) return json({ error: "Form not found" }, 404);
+  const parsed = parseFormSchema(form.schema_json);
+  const keys = parsed.fields.map((f) => f.name);
+  const { results } = await env.DB.prepare(
+    "SELECT received_at, email_status, payload_preview FROM submissions WHERE form_id = ? ORDER BY received_at DESC LIMIT 500",
+  )
+    .bind(form.id)
+    .all();
+  const header = ["submitted_at", "mail", ...keys].join(",");
+  const lines = [header];
+  for (const row of results || []) {
+    const item = row as { received_at: number; email_status: string; payload_preview: string };
+    let payload: Record<string, string> = {};
+    try { payload = item.payload_preview ? JSON.parse(item.payload_preview) as Record<string, string> : {}; } catch { payload = {}; }
+    const cells = [
+      new Date(item.received_at).toISOString(),
+      item.email_status,
+      ...keys.map((k) => `"${String(payload[k] || "").replace(/"/g, '""')}"`),
+    ];
+    lines.push(cells.join(","));
+  }
+  return new Response(lines.join("\n"), {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="${form.slug}-submissions.csv"`,
+    },
+  });
 }
 
 async function ownedForm(env: Env, user: UserRow, id: string): Promise<FormRow | null> {
-  return env.DB.prepare("SELECT * FROM forms WHERE id = ? AND user_id = ?").bind(id, user.id).first<FormRow>();
+  return env.DB.prepare("SELECT * FROM forms WHERE user_id = ? AND (id = ? OR slug = ?)").bind(user.id, id, id).first<FormRow>();
 }
 
 function publicOrigin(env: Env, request: Request): string {
@@ -263,6 +379,40 @@ async function resendSubmission(request: Request, env: Env, formId: string, subm
     await deliverQueuedMail(env, submissionId);
   }
   return json({ ok: true });
+}
+
+function isStaticAssetPath(path: string): boolean {
+  return (
+    path === "/schema.js" ||
+    path === "/builder.js" ||
+    path === "/app.js" ||
+    path === "/styles.css" ||
+    path === "/index.html" ||
+    /\.(?:js|css|map|svg|png|ico|txt)$/i.test(path)
+  );
+}
+
+async function serveStaticAsset(request: Request, env: Env, path: string): Promise<Response> {
+  const asset = await env.ASSETS.fetch(new Request(new URL(path, request.url), request));
+  const type = (asset.headers.get("content-type") || "").toLowerCase();
+  const peek = await asset.clone().text();
+  const looksHtml = type.includes("text/html") || /^\s*<(!doctype|html|head|body)\b/i.test(peek);
+  if (looksHtml && /\.(js|css)$/i.test(path)) {
+    return new Response(`/* missing static asset ${path} */`, {
+      status: 404,
+      headers: {
+        "content-type": path.endsWith(".css") ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  }
+  const headers = new Headers(asset.headers);
+  if (path.endsWith(".js")) headers.set("content-type", "application/javascript; charset=utf-8");
+  if (path.endsWith(".css")) headers.set("content-type", "text/css; charset=utf-8");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("cache-control", "public, max-age=60");
+  return new Response(peek, { status: asset.status, headers });
 }
 
 function withSecurity(response: Response): Response {

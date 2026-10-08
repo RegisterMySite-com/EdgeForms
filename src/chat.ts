@@ -1,26 +1,28 @@
 import type { ChatMessage, Env } from "./types";
+export { defaultEmbed, renderEmbed } from "./embed";
 
 const MODEL_ID = "@cf/meta/llama-3.1-8b-instruct-fp8";
 
-export const SYSTEM_PROMPT = `You are EdgeForms Studio, the RegisterMySite form builder.
-Help the user design a web form that will POST to a Cloudflare EdgeForms endpoint.
+export const SYSTEM_PROMPT = `You are EdgeForms Studio. Design a web form as ONE fenced JSON block. The platform renders HTML. Do not invent backend code. Do not write a follow-up user message. Stop after one short sentence.
 
 Rules:
-- Ask only what you need: purpose, fields, required fields, tone.
-- When you have enough, output a fenced JSON block AND an HTML snippet.
+- Output only: brief confirmation, then \`\`\`json ... \`\`\`.
+- Do not invent placeholders, button labels, extra fields, or "restyle the font" suggestions.
+- Default buttonText is "Submit". Omit placeholder unless the user asked for example text.
 - JSON shape:
 {
   "name": "Contact",
+  "theme": { "font": "dm-sans", "background": "#ffffff", "text": "#111318", "muted": "#5c6570", "accent": "#0f766e", "fieldBackground": "#f4f7f6", "buttonText": "Submit", "buttonColor": "#0f766e", "buttonTextColor": "#ffffff" },
   "fields": [
-    {"name":"name","label":"Name","type":"text","required":true,"placeholder":"Your name"},
+    {"name":"firstName","label":"First name","type":"text","required":true},
     {"name":"email","label":"Email","type":"email","required":true},
+    {"name":"topic","label":"Topic","type":"select","required":true,"options":["Sales","Support"]},
     {"name":"message","label":"Message","type":"textarea","required":true}
   ]
 }
-- Allowed field types: text, email, tel, url, number, textarea, select, checkbox, hidden.
-- HTML must be a single <form method="POST" action="{{ENDPOINT}}"> with labels, a honeypot input named _gotcha (hidden with CSS), and a submit button.
-- Do not invent backend code. Do not mention competitors except to say EdgeForms stays on the Cloudflare network.
-- Keep answers concise. After the JSON + HTML, add one sentence on how to paste the form onto a RegisterMySite static page.`;
+- Field types: text, email, tel, url, number, date, textarea, select, checkbox.
+- Font ids: system, inter, dm-sans, source-sans, nunito, ibm-plex, space-grotesk, libre-franklin, lora, merriweather, playfair.
+- Use date for DOB, number for age/height/weight, textarea for address.`;
 
 export async function handleChat(request: Request, env: Env): Promise<Response> {
   const { messages = [] } = (await request.json()) as { messages: ChatMessage[] };
@@ -35,11 +37,8 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     MODEL_ID,
     {
       messages: safe,
-      max_tokens: 1024,
+      max_tokens: 900,
       stream: true,
-    },
-    {
-      gateway: undefined,
     },
   );
 
@@ -50,29 +49,4 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
       connection: "keep-alive",
     },
   });
-}
-
-export function defaultEmbed(name: string, fields: Array<{ name: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>): string {
-  const controls = fields
-    .map((f) => {
-      const req = f.required ? " required" : "";
-      const ph = f.placeholder ? ` placeholder="${f.placeholder}"` : "";
-      if (f.type === "textarea") {
-        return `<label>${f.label}<textarea name="${f.name}"${req}${ph}></textarea></label>`;
-      }
-      if (f.type === "select") {
-        const opts = (f.options || []).map((o) => `<option value="${o}">${o}</option>`).join("");
-        return `<label>${f.label}<select name="${f.name}"${req}>${opts}</select></label>`;
-      }
-      if (f.type === "checkbox") {
-        return `<label><input type="checkbox" name="${f.name}" value="yes"${req}> ${f.label}</label>`;
-      }
-      return `<label>${f.label}<input type="${f.type || "text"}" name="${f.name}"${req}${ph}></label>`;
-    })
-    .join("\n  ");
-  return `<form action="{{ENDPOINT}}" method="POST">
-  <input type="text" name="_gotcha" style="display:none" tabindex="-1" autocomplete="off">
-  ${controls}
-  <button type="submit">Send</button>
-</form>`;
 }

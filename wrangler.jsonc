@@ -10,7 +10,18 @@
     "directory": "./public",
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/f/*",
+      "/app",
+      "/app/*",
+      "/builder",
+      "/schema.js",
+      "/builder.js",
+      "/app.js",
+      "/styles.css"
+    ]
   },
   "observability": {
     "enabled": true
@@ -27,13 +38,13 @@
     {
       "binding": "DB",
       "database_name": "edgeforms",
-      "database_id": "REPLACE_WITH_D1_ID"
+      "database_id": "fa683016-a464-4db5-ae65-b5494b4a39f1"
     }
   ],
   "kv_namespaces": [
     {
-      "binding": "KV",
-      "id": "REPLACE_WITH_KV_ID"
+      "binding": "KVEDGEFORM",
+      "id": "0477c0bcd2f2476dbe1e25fa4aa8330b"
     }
   ],
   "r2_buckets": [

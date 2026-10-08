@@ -31,7 +31,9 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: fd.get("email"), password: fd.get("password") }),
       });
-      const data = await res.json();
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw || `Sign in failed (${res.status})` }; }
       if (!res.ok) { err.textContent = data.error || "Could not sign in"; return; }
       location.href = "/app.html";
     });
