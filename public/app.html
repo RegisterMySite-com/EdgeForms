@@ -11,9 +11,11 @@
     <nav class="nav">
       <a class="brand" href="/">EdgeForms <small>RegisterMySite</small></a>
       <div class="nav-links">
+        <a class="account-chip" id="account-home" href="https://account.registermysite.com/dashboard" hidden>Back to dashboard</a>
         <span id="who" class="mono" style="color:var(--muted);font-size:12px;"></span>
         <a class="btn btn-ghost" href="/builder.html">New form</a>
-        <button class="ghost" id="logout">Log out</button>
+        <button class="ghost" id="logout" type="button">Log out</button>
+        <a href="https://account.registermysite.com/logout">Sign out of RegisterMySite everywhere</a>
       </div>
     </nav>
     <section style="padding:28px 0;">
@@ -27,5 +29,21 @@
     <div id="detail"></div>
   </div>
   <script src="/app.js"></script>
+  <script>
+    fetch("/api/me").then(async (r) => {
+      if (r.status === 401) {
+        location.href = "https://account.registermysite.com/login?next=" + encodeURIComponent(location.href);
+        return;
+      }
+      const data = await r.json();
+      if (data.accountLinked) document.getElementById("account-home").hidden = false;
+      const who = document.getElementById("who");
+      if (who && data.email) who.textContent = data.email;
+    }).catch(() => {});
+    document.getElementById("logout").addEventListener("click", async () => {
+      await fetch("/api/logout", { method: "POST" });
+      location.href = "/";
+    });
+  </script>
 </body>
 </html>

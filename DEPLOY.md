@@ -32,7 +32,18 @@ Pin a single inbox only if this install is private:
 "send_email": [{ "name": "EMAIL", "destination_address": "you@registermysite.com" }]
 ```
 
-## Migrate and ship
+## Shared RegisterMySite login
+
+Password login stays. A valid `rms_account` cookie from account.registermysite.com is a second way in. Set the same secrets as the account Worker, then migrate:
+
+```bash
+npx wrangler secret put SESSION_JWT_SECRET
+npx wrangler secret put INTERNAL_PROVISION_SECRET
+npx wrangler d1 migrations apply edgeforms --remote
+npx wrangler deploy
+```
+
+`SESSION_JWT_SECRET_PREV` is optional, for secret rotation. Do not put these values in git.
 
 ```bash
 npx wrangler d1 migrations apply edgeforms --remote

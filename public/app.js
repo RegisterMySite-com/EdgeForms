@@ -326,7 +326,10 @@ async function sendMessage(event) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: wire }),
     });
-    if (response.status === 401) { location.href = "/login"; return; }
+    if (response.status === 401) {
+      location.href = "https://account.registermysite.com/login?next=" + encodeURIComponent(location.href);
+      return;
+    }
     if (!response.ok || !response.body) throw new Error("Chat request failed");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -484,8 +487,14 @@ async function loadExisting() {
   await refreshPreview();
 }
 
-fetch("/api/me").then((r) => {
-  if (r.status === 401) location.href = "/login";
+fetch("/api/me").then(async (r) => {
+  if (r.status === 401) {
+    location.href = "https://account.registermysite.com/login?next=" + encodeURIComponent(location.href);
+    return;
+  }
+  const data = await r.json();
+  const chip = document.getElementById("account-home");
+  if (chip && data.accountLinked) chip.hidden = false;
 });
 if (typeof EFSchema === "undefined") {
   chatErr.textContent = "The form builder failed to load (schema.js). Reload the page.";

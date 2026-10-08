@@ -1,4 +1,5 @@
 import { handleLogin, handleLogout, handleSignup, requireUser } from "./auth";
+import { APP_VERSION, accountLinkStatus, accountSummary } from "./account";
 import { handleChat } from "./chat";
 import { parseFormSchema, renderEmbed, sanitizeTheme } from "./embed";
 import { FormGuard } from "./guard";
@@ -39,11 +40,15 @@ export default {
           ok: true,
           product: "EdgeForms",
           brand: env.BRAND,
+          version: APP_VERSION,
           emailFrom: env.FROM_EMAIL,
           bindings,
           database,
         });
       }
+
+      if (path === "/api/internal/account-summary" && request.method === "GET") return accountSummary(request, env);
+      if (path === "/api/account-link-status" && request.method === "GET") return accountLinkStatus(request, env);
 
       if (path === "/api/demo") {
         const demo = await ensureDemoForm(env);
@@ -52,7 +57,7 @@ export default {
       if (path === "/api/signup" && request.method === "POST") return handleSignup(request, env);
       if (path === "/api/login" && request.method === "POST") return handleLogin(request, env);
       if (path === "/api/logout" && request.method === "POST") return handleLogout(request, env);
-      if (path === "/api/me") return me(request, env);
+      if (path === "/api/me" || path === "/api/auth/me") return me(request, env);
       if (path === "/api/chat" && request.method === "POST") {
         const user = await requireUser(request, env);
         if (user instanceof Response) return user;
@@ -120,10 +125,13 @@ async function me(request: Request, env: Env): Promise<Response> {
   const user = await requireUser(request, env);
   if (user instanceof Response) return user;
   return json({
+    authenticated: true,
+    accountLinked: Boolean(user.account_user_id),
     id: user.id,
     email: user.email,
     name: user.name,
     createdAt: user.created_at,
+    user: { id: user.id, email: user.email, name: user.name },
   });
 }
 

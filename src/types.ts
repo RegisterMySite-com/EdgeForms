@@ -15,6 +15,9 @@ export interface Env {
   FROM_NAME: string;
   PUBLIC_ORIGIN: string;
   SESSION_TTL_SECONDS: string;
+  SESSION_JWT_SECRET?: string;
+  SESSION_JWT_SECRET_PREV?: string;
+  INTERNAL_PROVISION_SECRET?: string;
 }
 
 export interface EmailPayload {
@@ -39,6 +42,7 @@ export interface UserRow {
   password_salt: string;
   created_at: number;
   verified_at: number | null;
+  account_user_id?: string | null;
 }
 
 export interface FormRow {

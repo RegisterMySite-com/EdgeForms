@@ -1,4 +1,5 @@
 import type { Env, UserRow } from "./types";
+import { linkAfterLocalLogin, userFromAccountCookie } from "./account";
 import {
   clearCookie,
   clientIp,
@@ -17,6 +18,12 @@ import {
 const SESSION = "ef_session";
 
 export async function currentUser(request: Request, env: Env): Promise<UserRow | null> {
+  const local = await localUser(request, env);
+  if (local) return local;
+  return userFromAccountCookie(request, env);
+}
+
+async function localUser(request: Request, env: Env): Promise<UserRow | null> {
   const sid = readCookie(request, SESSION);
   if (!sid) return null;
   const cached = await kvGet(env, `session:${sid}`);
@@ -75,6 +82,7 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
     return json({ error: "Could not create the account", detail: String(err) }, 500);
   }
 
+  await linkAfterLocalLogin(request, env, { id, email, name: name || null, password_hash, password_salt: salt, created_at: now, verified_at: null });
   return issueSession(env, id, request);
 }
 
@@ -86,6 +94,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   if (!user) return json({ error: "Invalid email or password" }, 401);
   const hash = await hashPassword(password, user.password_salt);
   if (!timingSafeEqual(hash, user.password_hash)) return json({ error: "Invalid email or password" }, 401);
+  await linkAfterLocalLogin(request, env, user);
   return issueSession(env, user.id, request);
 }
 

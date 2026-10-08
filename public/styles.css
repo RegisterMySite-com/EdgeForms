@@ -128,6 +128,16 @@ textarea { min-height: 110px; resize: vertical; }
   color: var(--teal);
   font-size: 12px;
 }
+.account-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+.auth-box .btn-primary { display: block; text-align: center; margin: 8px 0 4px; }
 .footer { color: var(--muted); font-size: 13px; padding: 40px 0 24px; }
 .chat-shell { height: calc(100vh - 72px); display: grid; grid-template-rows: 1fr auto; min-width: 0; }
 .messages { overflow: auto; padding: 20px 0 12px; display: flex; flex-direction: column; gap: 12px; }
