@@ -6,7 +6,7 @@ import { FormGuard } from "./guard";
 import { deliverQueuedMail, handleSubmit } from "./submit";
 import type { Env, FieldSchema, FormRow, FormTheme, UserRow } from "./types";
 import { DEMO_SLUG, ensureDemoForm } from "./demo";
-import { formSlug, isEmail, json, kvDelete, kvGet, kvPut, randomId } from "./util";
+import { formSlug, isEmail, json, kvDelete, kvGet, kvPut, randomId, escapeHtml } from "./util";
 
 export { FormGuard };
 
@@ -360,13 +360,9 @@ async function adminUnlinked(request: Request, env: Env): Promise<Response> {
   const { results } = await env.DB.prepare(
     "SELECT id, email, name, created_at FROM users WHERE account_user_id IS NULL OR account_user_id = '' ORDER BY created_at DESC LIMIT 200",
   ).all<{ id: string; email: string; name: string | null; created_at: number }>();
-  const rows = (results || []).map((row) => `<tr><td>${escape(row.email)}</td><td>${escape(row.name || "")}</td><td>${escape(row.id)}</td><td>${new Date(row.created_at).toISOString()}</td></tr>`).join("");
+  const rows = (results || []).map((row) => `<tr><td>${escapeHtml(row.email)}</td><td>${escapeHtml(row.name || "")}</td><td>${escapeHtml(row.id)}</td><td>${new Date(row.created_at).toISOString()}</td></tr>`).join("");
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Unlinked users · EdgeForms</title><link rel="stylesheet" href="/styles.css"></head><body><div class="wrap"><nav class="nav"><a class="brand" href="/app">EdgeForms</a><div class="nav-links"><a href="/logout">Log out</a></div></nav><h1>Unlinked users</h1><p>These EdgeForms records are not linked to a RegisterMySite account. They link on the next verified sign-in with the same email.</p><table class="table"><thead><tr><th>Email</th><th>Name</th><th>Id</th><th>Created</th></tr></thead><tbody>${rows || "<tr><td colspan=\"4\">None</td></tr>"}</tbody></table></div></body></html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
-}
-
-function escape(value: string): string {
-  return value.replace(/[&<>"']/g, (ch) => ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "&#39;" }[ch] || ch));
 }
 
 function isAccountEntry(path: string): boolean {
