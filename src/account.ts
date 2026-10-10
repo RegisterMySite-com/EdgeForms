@@ -3,7 +3,7 @@ import { isEmail, json, kvGet, kvPut, randomId, readCookie, timingSafeEqual } fr
 
 export const ACCOUNT_COOKIE = "rms_account";
 export const ACCOUNT_ISS = "https://account.registermysite.com";
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.4.0";
 const SKEW_MS = 60_000;
 
 export interface AccountClaims {
@@ -134,12 +134,19 @@ export async function userFromAccountCookie(request: Request, env: Env): Promise
   if (!claims) return null;
   try {
     const linked = await env.DB.prepare("SELECT * FROM users WHERE account_user_id = ?").bind(claims.sub).first<UserRow>();
-    if (linked) return linked;
+    if (linked) {
+      if (linked.password_hash) {
+        await env.DB.prepare("UPDATE users SET password_hash = '', password_salt = '' WHERE id = ?").bind(linked.id).run();
+        linked.password_hash = "";
+        linked.password_salt = "";
+      }
+      return linked;
+    }
 
     const sameEmail = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(claims.email).first<UserRow>();
     if (sameEmail) {
       if (claims.email_verified && (!sameEmail.account_user_id || sameEmail.account_user_id === claims.sub)) {
-        await env.DB.prepare("UPDATE users SET account_user_id = ?, verified_at = COALESCE(verified_at, ?) WHERE id = ?")
+        await env.DB.prepare("UPDATE users SET account_user_id = ?, verified_at = COALESCE(verified_at, ?), password_hash = '', password_salt = '' WHERE id = ?")
           .bind(claims.sub, Date.now(), sameEmail.id)
           .run();
         return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(sameEmail.id).first<UserRow>();
@@ -155,14 +162,12 @@ export async function userFromAccountCookie(request: Request, env: Env): Promise
 
 async function createLinkedUser(env: Env, claims: AccountClaims): Promise<UserRow | null> {
   const id = randomId(18);
-  const salt = randomId(24);
-  const passwordHash = await hmacSha256(salt, randomId(32));
   const now = Date.now();
   await env.DB.prepare(
     `INSERT INTO users (id, email, name, password_hash, password_salt, created_at, verified_at, account_user_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, '', '', ?, ?, ?)`,
   )
-    .bind(id, claims.email, null, passwordHash, salt, now, claims.email_verified ? now : null, claims.sub)
+    .bind(id, claims.email, null, now, claims.email_verified ? now : null, claims.sub)
     .run();
   return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<UserRow>();
 }

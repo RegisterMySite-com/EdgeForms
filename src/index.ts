@@ -1,4 +1,4 @@
-import { handleLogin, handleLogout, handleSignup, redirectIfSharedSession, requireUser } from "./auth";
+import { handleLogout, redirectAuthPage, redirectIfSharedSession, requireUser } from "./auth";
 import { APP_VERSION, accountLinkStatus, accountSummary } from "./account";
 import { handleChat } from "./chat";
 import { parseFormSchema, renderEmbed, sanitizeTheme } from "./embed";
@@ -55,9 +55,6 @@ export default {
         const demo = await ensureDemoForm(env);
         return json({ slug: demo.slug, endpoint: `${publicOrigin(env, request)}/f/${demo.slug}` });
       }
-      if (path === "/api/signup" && request.method === "POST") return handleSignup(request, env);
-      if (path === "/api/login" && request.method === "POST") return handleLogin(request, env);
-      if (path === "/api/logout" && request.method === "POST") return handleLogout(request, env);
       if (path === "/api/me" || path === "/api/auth/me") return me(request, env);
       if (path === "/api/chat" && request.method === "POST") {
         const user = await requireUser(request, env);
@@ -88,7 +85,16 @@ export default {
         return handleSubmit(request, env, (publicForm || publicJs)![1]);
       }
 
-      if (request.method === "GET" && isAccountEntry(path)) {
+      if (path.startsWith("/api/")) return json({ error: "Not found" }, 404);
+
+      if (path === "/logout") return handleLogout(request, env);
+      if (path === "/admin") return adminUnlinked(request, env);
+      if (path === "/login" || path === "/login.html") return redirectAuthPage(request, env, "login");
+      if (path === "/signup" || path === "/signup.html" || path === "/register" || path === "/register.html") {
+        return redirectAuthPage(request, env, "register");
+      }
+
+      if (request.method === "GET" && path === "/") {
         const signedIn = await redirectIfSharedSession(request, env);
         if (signedIn) return signedIn;
       }
@@ -346,8 +352,25 @@ async function ownedForm(env: Env, user: UserRow, id: string): Promise<FormRow |
   return env.DB.prepare("SELECT * FROM forms WHERE user_id = ? AND (id = ? OR slug = ?)").bind(user.id, id, id).first<FormRow>();
 }
 
+async function adminUnlinked(request: Request, env: Env): Promise<Response> {
+  const user = await requireUser(request, env);
+  if (user instanceof Response) return user;
+  const allowed = (env.ADMIN_EMAILS || "info@registermysite.com").split(",").map((s) => s.trim().toLowerCase());
+  if (!allowed.includes(user.email.toLowerCase())) return json({ error: "Not found" }, 404);
+  const { results } = await env.DB.prepare(
+    "SELECT id, email, name, created_at FROM users WHERE account_user_id IS NULL OR account_user_id = '' ORDER BY created_at DESC LIMIT 200",
+  ).all<{ id: string; email: string; name: string | null; created_at: number }>();
+  const rows = (results || []).map((row) => `<tr><td>${escape(row.email)}</td><td>${escape(row.name || "")}</td><td>${escape(row.id)}</td><td>${new Date(row.created_at).toISOString()}</td></tr>`).join("");
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Unlinked users · EdgeForms</title><link rel="stylesheet" href="/styles.css"></head><body><div class="wrap"><nav class="nav"><a class="brand" href="/app">EdgeForms</a><div class="nav-links"><a href="/logout">Log out</a></div></nav><h1>Unlinked users</h1><p>These EdgeForms records are not linked to a RegisterMySite account. They link on the next verified sign-in with the same email.</p><table class="table"><thead><tr><th>Email</th><th>Name</th><th>Id</th><th>Created</th></tr></thead><tbody>${rows || "<tr><td colspan=\"4\">None</td></tr>"}</tbody></table></div></body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+function escape(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "&#39;" }[ch] || ch));
+}
+
 function isAccountEntry(path: string): boolean {
-  return path === "/" || path === "/index.html" || path === "/login" || path === "/login.html" || path === "/signup" || path === "/signup.html";
+  return path === "/";
 }
 
 function publicOrigin(env: Env, request: Request): string {

@@ -8,7 +8,7 @@ Live host (after you attach the zone): `https://forms.registermysite.com`
 
 ## What you get
 
-- Account signup and session cookies (D1 + KV)
+- Sign in with the RegisterMySite account (rms_account JWT)
 - Form studio built from Cloudflare’s [llm-chat-app-template](https://github.com/cloudflare/llm-chat-app-template): streaming `/api/chat` over Workers AI
 - Destination email per form
 - Public endpoint `POST /f/:slug` for HTML forms or JSON

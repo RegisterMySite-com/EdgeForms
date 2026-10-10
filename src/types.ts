@@ -18,6 +18,7 @@ export interface Env {
   SESSION_JWT_SECRET?: string;
   SESSION_JWT_SECRET_PREV?: string;
   INTERNAL_PROVISION_SECRET?: string;
+  ADMIN_EMAILS?: string;
 }
 
 export interface EmailPayload {

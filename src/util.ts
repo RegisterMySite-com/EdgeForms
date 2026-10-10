@@ -18,27 +18,6 @@ export async function sha256Hex(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function hashPassword(password: string, salt: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: new TextEncoder().encode(salt),
-      iterations: 80_000,
-      hash: "SHA-256",
-    },
-    key,
-    256,
-  );
-  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;

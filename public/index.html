@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EdgeForms — form backend on the Cloudflare edge</title>
-  <meta name="description" content="RegisterMySite EdgeForms is a Formspree-style inbox that never leaves Cloudflare. Sign up, generate a form with Workers AI, and POST to your destination email." />
+  <meta name="description" content="RegisterMySite EdgeForms is a Formspree-style inbox that never leaves Cloudflare. Sign in with your RegisterMySite account, generate a form with Workers AI, and POST to your destination email." />
   <meta name="theme-color" content="#07080a" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -15,7 +15,7 @@
       <div class="nav-links">
         <a href="/example">Demo form</a>
         <a href="/app">Dashboard</a>
-        <a class="btn btn-primary" href="/signup">Create account</a>
+        <a class="btn btn-primary" id="sign-in" href="https://account.registermysite.com/login?next=https%3A%2F%2Fforms.registermysite.com%2Fapp">Sign in with your RegisterMySite account</a>
       </div>
     </nav>
 
@@ -29,17 +29,17 @@
         <code>forms@registermysite.com</code>.
       </p>
       <p class="stack" style="margin-top:22px;">
-        <a class="btn btn-primary" href="/signup">Sign up</a>
+        <a class="btn btn-primary" id="sign-in-hero" href="https://account.registermysite.com/login?next=https%3A%2F%2Fforms.registermysite.com%2Fapp">Sign in with your RegisterMySite account</a>
         <a class="btn btn-ghost" href="/builder">Open the form studio</a>
-        <a class="btn btn-ghost" href="/login">Sign in</a>
+        <a class="btn btn-ghost" id="sign-in-ghost" href="https://account.registermysite.com/login?next=https%3A%2F%2Fforms.registermysite.com%2Fapp">Sign in</a>
       </p>
     </section>
 
     <section class="grid cards">
       <article class="card">
         <p class="kicker">01</p>
-        <h3>Create an account</h3>
-        <p>Email + password hashed with PBKDF2. Session cookies in KV. No third-party IdP.</p>
+        <h3>Sign in with your RegisterMySite account</h3>
+        <p>Sign in with your RegisterMySite account. One account opens EdgeForms. No separate password.</p>
       </article>
       <article class="card">
         <p class="kicker">02</p>
@@ -67,8 +67,8 @@
             <span class="step-num">1</span>
             <div>
               <h3>Create a form</h3>
-              <p>Sign up and publish a form in the dashboard.</p>
-              <a class="btn btn-primary" href="/signup">Create a free form</a>
+              <p>Sign in with your RegisterMySite account and publish a form in the dashboard.</p>
+              <a class="btn btn-primary" id="sign-in-step" href="https://account.registermysite.com/login?next=https%3A%2F%2Fforms.registermysite.com%2Fapp">Sign in with your RegisterMySite account</a>
             </div>
           </li>
           <li>
@@ -199,6 +199,11 @@
     });
   </script>
   <script>
+    const next = encodeURIComponent(location.origin + "/app");
+    for (const id of ["sign-in", "sign-in-hero", "sign-in-ghost", "sign-in-step"]) {
+      const link = document.getElementById(id);
+      if (link) link.href = "https://account.registermysite.com/login?next=" + next;
+    }
     fetch("/api/me").then((r) => { if (r.ok) location.replace("/app"); }).catch(() => {});
   </script>
 </body>

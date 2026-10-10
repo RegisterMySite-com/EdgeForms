@@ -1,114 +1,63 @@
 import type { Env, UserRow } from "./types";
-import { linkAfterLocalLogin, userFromAccountCookie } from "./account";
-import {
-  clearCookie,
-  clientIp,
-  cookie,
-  hashPassword,
-  isEmail,
-  json,
-  kvDelete,
-  kvGet,
-  kvPut,
-  randomId,
-  readCookie,
-  timingSafeEqual,
-} from "./util";
+import { userFromAccountCookie } from "./account";
+import { clearCookie, cookie, kvDelete, kvGet, kvPut, randomId, readCookie } from "./util";
 
 const SESSION = "ef_session";
 
 export async function currentUser(request: Request, env: Env): Promise<UserRow | null> {
-  const local = await localUser(request, env);
-  if (local) return local;
   return userFromAccountCookie(request, env);
-}
-
-async function localUser(request: Request, env: Env): Promise<UserRow | null> {
-  const sid = readCookie(request, SESSION);
-  if (!sid) return null;
-  const cached = await kvGet(env, `session:${sid}`);
-  const userId = cached || (
-    await env.DB.prepare("SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?")
-      .bind(sid, Date.now())
-      .first<{ user_id: string }>()
-  )?.user_id;
-  if (!userId) return null;
-  if (!cached) {
-    const ttl = Number(env.SESSION_TTL_SECONDS || 2592000);
-    await kvPut(env, `session:${sid}`, userId, ttl);
-  }
-  return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first<UserRow>();
-}
-
-export async function redirectIfSharedSession(request: Request, env: Env): Promise<Response | null> {
-  const user = await currentUser(request, env);
-  if (!user) return null;
-  const headers = new Headers({
-    location: "/app",
-    "cache-control": "no-store",
-  });
-  if (!readCookie(request, SESSION)) {
-    headers.set("set-cookie", await mintSession(env, user.id, request));
-  }
-  return new Response(null, { status: 302, headers });
 }
 
 export async function requireUser(request: Request, env: Env): Promise<UserRow | Response> {
   const user = await currentUser(request, env);
-  if (!user) return json({ error: "Sign in required" }, 401);
+  if (!user) return jsonSignIn(request);
   return user;
 }
 
-export async function handleSignup(request: Request, env: Env): Promise<Response> {
-  const body = (await request.json()) as { email?: string; password?: string; name?: string };
-  const email = (body.email || "").trim().toLowerCase();
-  const password = body.password || "";
-  const name = (body.name || "").trim().slice(0, 80);
-  if (!isEmail(email)) return json({ error: "Enter a valid email" }, 400);
-  if (password.length < 10) return json({ error: "Password must be at least 10 characters" }, 400);
-
-  let existing: { id: string } | null = null;
-  try {
-    existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first<{ id: string }>();
-  } catch (err) {
-    return json({ error: "Database is not ready. Apply D1 migrations remotely.", detail: String(err) }, 503);
-  }
-  if (existing) return json({ error: "An account already exists for that email" }, 409);
-
-  const ip = clientIp(request);
-  const bucket = `signup:${ip}:${Math.floor(Date.now() / 3_600_000)}`;
-  const hits = Number((await kvGet(env, bucket)) || "0");
-  if (hits >= 8) return json({ error: "Too many signups from this network. Try later." }, 429);
-  await kvPut(env, bucket, String(hits + 1), 3600);
-
-  const id = randomId(18);
-  const salt = randomId(24);
-  const password_hash = await hashPassword(password, salt);
-  const now = Date.now();
-  try {
-    await env.DB.prepare(
-      "INSERT INTO users (id, email, name, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-      .bind(id, email, name || null, password_hash, salt, now)
-      .run();
-  } catch (err) {
-    return json({ error: "Could not create the account", detail: String(err) }, 500);
-  }
-
-  await linkAfterLocalLogin(request, env, { id, email, name: name || null, password_hash, password_salt: salt, created_at: now, verified_at: null });
-  return issueSession(env, id, request);
+function jsonSignIn(request: Request): Response {
+  return new Response(JSON.stringify({ error: "Sign in required", login: accountLoginUrl(request) }), {
+    status: 401,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
-export async function handleLogin(request: Request, env: Env): Promise<Response> {
-  const body = (await request.json()) as { email?: string; password?: string };
-  const email = (body.email || "").trim().toLowerCase();
-  const password = body.password || "";
-  const user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first<UserRow>();
-  if (!user) return json({ error: "Invalid email or password" }, 401);
-  const hash = await hashPassword(password, user.password_salt);
-  if (!timingSafeEqual(hash, user.password_hash)) return json({ error: "Invalid email or password" }, 401);
-  await linkAfterLocalLogin(request, env, user);
-  return issueSession(env, user.id, request);
+export function accountLoginUrl(request: Request, kind: "login" | "register" = "login"): string {
+  const url = new URL(request.url);
+  const requested = url.searchParams.get("next");
+  const fallback = `${url.origin}/app`;
+  const next = requested && isSafeNext(requested, url.origin) ? requested : (isAuthPath(url.pathname) ? fallback : url.href);
+  return `https://account.registermysite.com/${kind}?next=${encodeURIComponent(next)}`;
+}
+
+export function accountLogoutUrl(request: Request): string {
+  const origin = new URL(request.url).origin;
+  return `https://account.registermysite.com/logout?next=${encodeURIComponent(origin + "/app")}`;
+}
+
+function isAuthPath(path: string): boolean {
+  return path === "/login" || path === "/login.html" || path === "/signup" || path === "/signup.html" || path === "/register" || path === "/register.html";
+}
+
+function isSafeNext(value: string, origin: string): boolean {
+  if (value.startsWith("/") && !value.startsWith("//")) return true;
+  try {
+    return new URL(value).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+export async function redirectAuthPage(request: Request, env: Env, kind: "login" | "register"): Promise<Response> {
+  const user = await currentUser(request, env);
+  const location = user ? "/app" : accountLoginUrl(request, kind);
+  return new Response(null, {
+    status: 302,
+    headers: { location, "cache-control": "no-store" },
+  });
 }
 
 export async function handleLogout(request: Request, env: Env): Promise<Response> {
@@ -117,14 +66,18 @@ export async function handleLogout(request: Request, env: Env): Promise<Response
     await kvDelete(env, `session:${sid}`);
     await env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(sid).run();
   }
-  return json({ ok: true }, 200, { "set-cookie": clearCookie(SESSION) });
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: accountLogoutUrl(request),
+      "set-cookie": clearCookie(SESSION),
+      "cache-control": "no-store",
+    },
+  });
 }
 
-async function issueSession(env: Env, userId: string, request: Request): Promise<Response> {
-  return json({ ok: true }, 200, { "set-cookie": await mintSession(env, userId, request) });
-}
-
-async function mintSession(env: Env, userId: string, request: Request): Promise<string> {
+export async function rememberLocalSession(request: Request, env: Env, userId: string): Promise<string> {
+  if (readCookie(request, SESSION)) return "";
   const sid = randomId(32);
   const ttl = Number(env.SESSION_TTL_SECONDS || 2592000);
   const now = Date.now();
@@ -135,4 +88,13 @@ async function mintSession(env: Env, userId: string, request: Request): Promise<
     .run();
   await kvPut(env, `session:${sid}`, userId, ttl);
   return cookie(SESSION, sid, ttl);
+}
+
+export async function redirectIfSharedSession(request: Request, env: Env): Promise<Response | null> {
+  const user = await currentUser(request, env);
+  if (!user) return null;
+  const headers = new Headers({ location: "/app", "cache-control": "no-store" });
+  const set = await rememberLocalSession(request, env, user.id);
+  if (set) headers.set("set-cookie", set);
+  return new Response(null, { status: 302, headers });
 }

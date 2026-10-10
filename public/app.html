@@ -15,7 +15,6 @@
         <span id="who" class="mono" style="color:var(--muted);font-size:12px;"></span>
         <a class="btn btn-ghost" href="/builder.html">New form</a>
         <button class="ghost" id="logout" type="button">Log out</button>
-        <a href="https://account.registermysite.com/logout">Sign out of RegisterMySite everywhere</a>
       </div>
     </nav>
     <section style="padding:28px 0;">
@@ -40,9 +39,8 @@
       const who = document.getElementById("who");
       if (who && data.email) who.textContent = data.email;
     }).catch(() => {});
-    document.getElementById("logout").addEventListener("click", async () => {
-      await fetch("/api/logout", { method: "POST" });
-      location.href = "/";
+    document.getElementById("logout").addEventListener("click", () => {
+      location.href = "/logout";
     });
   </script>
 </body>

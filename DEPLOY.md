@@ -34,7 +34,7 @@ Pin a single inbox only if this install is private:
 
 ## Shared RegisterMySite login
 
-A valid `rms_account` cookie on `/`, `/login`, or `/signup` creates or links the local user and redirects to `/app`. Those paths are in `run_worker_first` so the asset handler cannot skip the Worker. Public `/f/:slug` submits stay unauthenticated.
+Sign-in is only the RegisterMySite account. `/login` and `/signup` redirect to account.registermysite.com. `/logout` clears the local session and continues to the account logout. There is no local password.
 
 ```bash
 npx wrangler secret put SESSION_JWT_SECRET
