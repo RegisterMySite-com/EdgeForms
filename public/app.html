@@ -14,7 +14,7 @@
         <a class="account-chip" id="account-home" href="https://account.registermysite.com/dashboard" hidden>Back to dashboard</a>
         <span id="who" class="mono" style="color:var(--muted);font-size:12px;"></span>
         <a class="btn btn-ghost" href="/builder.html">New form</a>
-        <button class="ghost" id="logout" type="button">Log out</button>
+        <a class="btn btn-ghost" href="/logout">Sign out</a>
       </div>
     </nav>
     <section style="padding:28px 0;">
@@ -39,9 +39,6 @@
       const who = document.getElementById("who");
       if (who && data.email) who.textContent = data.email;
     }).catch(() => {});
-    document.getElementById("logout").addEventListener("click", () => {
-      location.href = "/logout";
-    });
   </script>
 </body>
 </html>
