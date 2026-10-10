@@ -324,27 +324,30 @@ async function sendMessage(event) {
   }
 
   try {
-    const first = await streamChat(wire);
+    const first = await askChat(wire);
     if (first.unauthorized) return;
-    let checked = recover(first.raw);
-    let shown = first.raw;
+    let checked = recover(first.text);
+    let shown = first.text;
     if (!checked.ok) {
-      setProgress(90);
-      const second = await streamChat(wire.concat([{
+      setProgress(70);
+      const second = await askChat(wire.concat([{
         role: "user",
         content: "Reply with one JSON object only: {name, fields, theme}. No prose.",
       }]));
       if (second.unauthorized) return;
-      const again = recover(second.raw);
-      shown = second.raw || first.raw;
+      const again = recover(second.text);
+      shown = second.text || first.text;
       if (again.ok) checked = again;
     }
     const last = chatHistory[chatHistory.length - 1];
+    if (!checked.ok && typeof EFSchema !== "undefined" && typeof EFSchema.fallbackSchema === "function") {
+      checked = EFSchema.fallbackSchema(message);
+    }
     if (!checked.ok) {
       last.content = "Could not apply that change. The current form is unchanged.";
-      chatErr.textContent = checked.error || "The model did not return a fields array.";
+      chatErr.textContent = (checked.error || "The model did not return a fields array.") + (shown ? " Model said: " + String(shown).slice(0, 240) : "");
       retryBtn.hidden = false;
-      rawJson.textContent = String(shown || first.raw || "").slice(0, 500);
+      rawJson.textContent = String(shown || "").slice(0, 500);
       document.getElementById("json-details").open = true;
       clearProgress();
       renderChat();
@@ -352,7 +355,13 @@ async function sendMessage(event) {
     }
     setProgress(100);
     applySchema(checked.schema);
-    last.content = "Updated: " + schema.fields.length + " fields";
+    last.content = checked.fallback
+      ? "Starter form from your description (" + schema.fields.length + " fields). The model did not return a fields array."
+      : "Updated: " + schema.fields.length + " fields";
+    if (checked.fallback && shown) {
+      chatErr.textContent = "Model text: " + String(shown).slice(0, 240);
+      rawJson.textContent = String(shown).slice(0, 500);
+    }
     retryBtn.hidden = true;
     renderChat();
     if (formId) await persistIfSaved();
@@ -397,7 +406,7 @@ function recover(raw) {
   return EFSchema.validateSchema(EFSchema.extractSchema(EFSchema.stripAfterJson(raw)));
 }
 
-async function streamChat(messages) {
+async function askChat(messages) {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -405,31 +414,11 @@ async function streamChat(messages) {
   });
   if (response.status === 401) {
     location.href = "https://account.registermysite.com/login?next=" + encodeURIComponent(location.href);
-    return { unauthorized: true, raw: "" };
+    return { unauthorized: true, text: "" };
   }
-  if (!response.ok || !response.body) throw new Error("Chat request failed");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let raw = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const parsed = consumeSseEvents(done ? buffer + "\n\n" : buffer);
-    buffer = parsed.rest;
-    for (const data of parsed.events) {
-      if (data === "[DONE]") continue;
-      try {
-        const jsonData = JSON.parse(data);
-        raw += typeof jsonData.response === "string"
-          ? jsonData.response
-          : (jsonData.choices?.[0]?.delta?.content || "");
-      } catch { /* ignore */ }
-    }
-    setProgress(Math.min(90, Math.round((raw.length / 8192) * 90)));
-    if (done) break;
-  }
-  return { raw };
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Chat request failed");
+  return { text: typeof data.text === "string" ? data.text : "" };
 }
 
 retryBtn.addEventListener("click", () => {

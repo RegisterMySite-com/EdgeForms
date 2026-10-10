@@ -3,7 +3,7 @@ import { isEmail, json, kvGet, kvPut, randomId, readCookie, timingSafeEqual } fr
 
 export const ACCOUNT_COOKIE = "rms_account";
 export const ACCOUNT_ISS = "https://account.registermysite.com";
-export const APP_VERSION = "1.4.0";
+export const APP_VERSION = "1.4.1";
 const SKEW_MS = 60_000;
 
 export interface AccountClaims {

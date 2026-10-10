@@ -154,5 +154,25 @@
     return validateSchema(extractSchema(stripped));
   }
 
-  root.EFSchema = { extractBalancedObject, stripAfterJson, extractSchema, validateSchema, parseStreamedText, recoverSchema, repairTruncatedObject };
+  function fallbackSchema(prompt) {
+    const text = String(prompt || "");
+    const called = text.match(/\bcalled\s+([^.?!\n]+)/i);
+    const name = (called ? called[1] : "Contact").trim().replace(/^["']|["']$/g, "").slice(0, 80) || "Contact";
+    const grooming = /groom|dog|pet|salon|spa/i.test(text);
+    const booking = /book|appoint|schedul|reserv/i.test(text);
+    const fields = [
+      { name: "name", label: "Your name", type: "text", required: true },
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "phone", label: "Phone", type: "tel", required: false },
+    ];
+    if (grooming) {
+      fields.push({ name: "petName", label: "Pet name", type: "text", required: true });
+      fields.push({ name: "service", label: "Service", type: "select", required: true, options: ["Bath", "Haircut", "Nails", "Full groom"] });
+    }
+    if (booking || grooming) fields.push({ name: "date", label: "Preferred date", type: "date", required: true });
+    fields.push({ name: "message", label: grooming ? "Notes" : "Message", type: "textarea", required: false, help: "Anything we should know." });
+    return { ok: true, schema: { name, fields, theme: { buttonText: "Submit" } }, fallback: true };
+  }
+
+  root.EFSchema = { extractBalancedObject, stripAfterJson, extractSchema, validateSchema, parseStreamedText, recoverSchema, repairTruncatedObject, fallbackSchema };
 })(typeof globalThis !== "undefined" ? globalThis : this);

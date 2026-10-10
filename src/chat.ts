@@ -34,20 +34,19 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
 
   safe.unshift({ role: "system", content: SYSTEM_PROMPT });
 
-  const stream = await env.AI.run(
-    MODEL_ID,
-    {
+  let text = "";
+  try {
+    const result = await env.AI.run(MODEL_ID, {
       messages: safe,
       max_tokens: 2500,
-      stream: true,
-    },
-  );
+      stream: false,
+    }) as { response?: string };
+    text = typeof result?.response === "string" ? result.response : JSON.stringify(result || {});
+  } catch (err) {
+    console.error("studio chat failed", err);
+    return Response.json({ ok: false, error: "The studio could not reach Workers AI.", text: String(err) }, { status: 502 });
+  }
 
-  return new Response(stream as ReadableStream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-    },
-  });
+  console.log("studio chat reply", text.slice(0, 500));
+  return Response.json({ ok: true, text });
 }

@@ -27,5 +27,7 @@ assert(EFSchema.recoverSchema(prose).ok, "pulls the fields object out of prose")
 const empty = "I could not decide.";
 assert(EFSchema.recoverSchema(empty).ok === false, "no fields stays a failure");
 
-if (failed) process.exit(1);
+const starter = EFSchema.fallbackSchema("i need a form for dog grooming busines called bitches and bubbles");
+assert(starter.ok && starter.schema.name === "bitches and bubbles", "starter form keeps the business name");
+assert(starter.schema.fields.some((f) => f.name === "petName"), "grooming starter includes a pet field");
 console.log("schema recover tests passed");
