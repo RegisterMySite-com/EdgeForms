@@ -6,7 +6,7 @@ import { wantsHtml, isTestRequest, limitFields, safeRedirect, wantsJson } from "
 import { DEMO_SLUG, ensureDemoForm, purgeDemoSubmissions } from "./demo";
 import { clientIp, json, kvGet, kvPut, randomId, sha256Hex } from "./util";
 
-const HIDDEN = new Set(["_gotcha", "_next", "_redirect", "honeypot"]);
+const HIDDEN = new Set(["_gotcha", "_next", "_redirect", "honeypot", "cf-turnstile-response"]);
 
 export async function handleSubmit(request: Request, env: Env, slug: string): Promise<Response> {
   slug = slug.replace(/\/$/, "").replace(/\.js$/i, "");
@@ -47,6 +47,11 @@ export async function handleSubmit(request: Request, env: Env, slug: string): Pr
   }
 
   const payload = await readPayload(request);
+  const token = payload["cf-turnstile-response"] || "";
+  const verified = await verifyTurnstile(request, env, form, token);
+  if (!verified.ok) {
+    return cors(request, json({ error: verified.error || "Turnstile verification failed" }, 403), form);
+  }
   const honeypot = form.honeypot_field || "_gotcha";
   if ((payload[honeypot] || "").trim()) {
     return finish(request, env, form, { ok: true, id: "ignored" });
@@ -57,6 +62,7 @@ export async function handleSubmit(request: Request, env: Env, slug: string): Pr
   delete clean._next;
   delete clean._redirect;
   delete clean.honeypot;
+  delete clean["cf-turnstile-response"];
   if (!Object.keys(clean).length) {
     return cors(request, json({ ok: false, errors: { form: "Form was empty" } }, 400), form);
   }
@@ -184,6 +190,59 @@ async function loadForm(env: Env, slug: string): Promise<FormRow | null> {
   return row;
 }
 
+function allowedHosts(form: FormRow, publicHost: string): Set<string> {
+  const hosts = new Set<string>([publicHost]);
+  if (!form.allowed_origins) return hosts;
+  try {
+    const list = JSON.parse(form.allowed_origins) as string[];
+    for (const entry of list) {
+      const raw = String(entry || "").trim();
+      if (!raw) continue;
+      try {
+        hosts.add(new URL(raw.includes("://") ? raw : `https://${raw}`).hostname.toLowerCase());
+      } catch { /* skip */ }
+    }
+  } catch { /* keep public host */ }
+  return hosts;
+}
+
+async function verifyTurnstile(
+  request: Request,
+  env: Env,
+  form: FormRow,
+  token: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (typeof token !== "string" || token.length === 0 || token.length > 2048) {
+    return { ok: false, error: "Complete the verification check" };
+  }
+  if (!env.TURNSTILE_SECRET) return { ok: false, error: "Turnstile is not configured" };
+  const publicHost = new URL(env.PUBLIC_ORIGIN || request.url).hostname.toLowerCase();
+  const expected = allowedHosts(form, publicHost);
+  let result: { success?: boolean; action?: string; hostname?: string };
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      signal: AbortSignal.timeout(10_000),
+      body: new URLSearchParams({
+        secret: env.TURNSTILE_SECRET,
+        response: token,
+        remoteip: clientIp(request),
+      }),
+    });
+    if (!response.ok) return { ok: false, error: "Turnstile verification failed" };
+    result = await response.json() as { success?: boolean; action?: string; hostname?: string };
+  } catch {
+    return { ok: false, error: "Turnstile verification failed" };
+  }
+  const hostname = (result.hostname || "").toLowerCase();
+  const listed = form.allowed_origins ? expected.has(hostname) : Boolean(hostname);
+  if (!result.success || result.action !== "form_submit" || !listed) {
+    return { ok: false, error: "Turnstile verification failed" };
+  }
+  return { ok: true };
+}
+
 function originAllowed(form: FormRow, referer: string, originHeader: string | null): boolean {
   if (!form.allowed_origins) return true;
   let allowed: string[] = [];
@@ -193,11 +252,11 @@ function originAllowed(form: FormRow, referer: string, originHeader: string | nu
     return true;
   }
   if (!allowed.length) return true;
+  allowed = [...allowed, "https://forms.registermysite.com"];
   const origin = (originHeader || "").trim();
   if (origin) {
     return allowed.some((entry) => originMatches(entry, origin));
   }
-  // Same-origin HTML posts send Origin; cross-site navigations may only send Referer.
   return allowed.some((entry) => originMatches(entry, referer));
 }
 

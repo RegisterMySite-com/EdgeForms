@@ -429,6 +429,12 @@ retryBtn.addEventListener("click", () => {
 
 composer.addEventListener("submit", sendMessage);
 
+function originsFromInput() {
+  const box = document.getElementById("origins");
+  if (!box) return [];
+  return box.value.split(/\n+/).map((s) => s.trim()).filter(Boolean).slice(0, 20);
+}
+
 document.getElementById("save").onclick = async () => {
   pubErr.textContent = "";
   pubOk.textContent = "";
@@ -448,6 +454,7 @@ document.getElementById("save").onclick = async () => {
     destinationEmail: dest,
     fields: schema.fields,
     theme: schema.theme,
+    allowedOrigins: originsFromInput(),
   };
   try {
     let res;
@@ -507,6 +514,10 @@ async function loadExisting() {
   formSlug = form.slug;
   endpoint = form.endpoint;
   document.getElementById("dest").value = form.destination_email || "";
+  const origins = Array.isArray(form.allowed_origins)
+    ? form.allowed_origins
+    : (() => { try { return JSON.parse(form.allowed_origins || "[]"); } catch { return []; } })();
+  document.getElementById("origins").value = (origins || []).join("\n");
   schema = {
     name: form.name,
     fields: form.fields || [],

@@ -100,8 +100,11 @@ export function renderEmbed(
     <label>Leave blank<input type="text" name="_gotcha" tabindex="-1" autocomplete="off"></label>
   </div>
 ${controls}
+  <div class="cf-turnstile" data-sitekey="0x4AAAAAAFl5J31O7MA2DAb6" data-action="form_submit"></div>
   <button class="ef-submit" type="submit">${attr(theme.buttonText)}</button>
-</form>${options.scripted ? scriptedHelper(endpoint) : ""}`;
+</form>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+${options.scripted ? scriptedHelper(endpoint) : ""}`;
 }
 
 function renderField(field: FieldSchema): string {
@@ -170,9 +173,12 @@ function scriptedHelper(endpoint: string): string {
       .then(function(j){
         if(j && j.ok){
           var ok=form.querySelector(".ef-ok");
-          Array.prototype.forEach.call(form.querySelectorAll(".ef-field,.ef-submit,.ef-note"), function(n){n.style.display="none";});
+          Array.prototype.forEach.call(form.querySelectorAll(".ef-field,.ef-submit,.ef-note,.cf-turnstile"), function(n){n.style.display="none";});
           if(ok) ok.style.display="block";
-        } else { alert((j && j.error) || "Could not send"); }
+        } else {
+          if(window.turnstile) window.turnstile.reset();
+          alert((j && j.error) || "Could not send");
+        }
       })
       .catch(function(){ alert("Could not send"); });
   });

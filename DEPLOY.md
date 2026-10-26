@@ -34,7 +34,14 @@ Pin a single inbox only if this install is private:
 
 ## Shared RegisterMySite login
 
-Sign-in is only the RegisterMySite account. `/login` and `/signup` redirect to account.registermysite.com. `/logout` clears the local session and continues to the account logout. There is no local password.
+Form embeds include Turnstile. Set the widget secret on the Worker, then deploy:
+
+```bash
+npx wrangler secret put TURNSTILE_SECRET
+npx wrangler deploy
+```
+
+Allowed origins are one site per line in the studio. A filled list is the only place that form can be submitted from, plus forms.registermysite.com.
 
 ```bash
 npx wrangler secret put SESSION_JWT_SECRET

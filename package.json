@@ -1,6 +1,6 @@
 {
   "name": "edgeforms",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "private": true,
   "description": "RegisterMySite EdgeForms — Formspree-style form backend on the Cloudflare network",
   "scripts": {

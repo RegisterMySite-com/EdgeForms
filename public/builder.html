@@ -52,6 +52,10 @@
         <p class="kicker">Edit form</p>
         <label>Form name<input id="form-name" /></label>
         <label>Notification email<input id="dest" type="email" placeholder="owner@yourdomain.com" /></label>
+        <label>Allowed origins
+          <textarea id="origins" rows="4" placeholder="https://yoursite.com&#10;https://www.yoursite.com"></textarea>
+        </label>
+        <p class="hint">One site per line. Submits and the embed only work from these origins, plus forms.registermysite.com. Leave empty to allow any site.</p>
         <label>Button label<input id="cta" /></label>
         <label>Success message<input id="success-msg" placeholder="Message sent." /></label>
         <div class="stack" style="margin-top:10px;">
